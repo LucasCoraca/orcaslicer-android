@@ -9110,7 +9110,7 @@ index c07b063c..83b27535 100644
  
      // IDEX/IQEX: everything render_scene() needs to place the secondary carriage markers and the
 diff --git a/src/slic3r/GUI/GLCanvas3D.cpp b/src/slic3r/GUI/GLCanvas3D.cpp
-index 95944a8d..eadf76be 100644
+index 95944a8d..4586ec57 100644
 --- a/src/slic3r/GUI/GLCanvas3D.cpp
 +++ b/src/slic3r/GUI/GLCanvas3D.cpp
 @@ -236,12 +236,12 @@ static void pan_camera(Camera& camera, const Vec2d& screen_delta, const Vec3d& a
@@ -9150,7 +9150,30 @@ index 95944a8d..eadf76be 100644
      if (!is_initialized() && !init())
          return;
  
-@@ -7159,7 +7164,7 @@ void GLCanvas3D::render_thumbnail_framebuffer(ThumbnailData& thumbnail_data, uns
+@@ -4631,7 +4636,22 @@ void GLCanvas3D::on_gesture(wxGestureEvent &evt)
+         static float zoom_start = 1;
+         if (evt.IsGestureStart())
+             zoom_start = camera.get_zoom();
++#ifdef __ANDROID__
++        // Orca Android: a pinch zooms toward the fingers, as on any touch screen. Zooming scales the view
++        // about its centre; then pan the point under the fingers (the pan gesture's anchor) back below them.
++        const double old_zoom = camera.get_zoom();
++        camera.set_zoom(zoom_start * static_cast<wxZoomGestureEvent&>(evt).GetZoomFactor());
++        const double k = camera.get_zoom() / old_zoom;
++        const auto& viewport = camera.get_viewport();
++        const auto p = evt.GetPosition();
++        Vec2d screen_position(p.x, p.y);
++        apply_retina_scale(screen_position);
++        const Vec2d from_centre = screen_position - Vec2d(viewport[2] * 0.5, viewport[3] * 0.5);
++        if (m_gesture_pan_anchor.has_value() && std::abs(k - 1.0) > EPSILON)
++            pan_camera(camera, (1.0 - k) * from_centre, *m_gesture_pan_anchor);
++#else
+         camera.set_zoom(zoom_start * static_cast<wxZoomGestureEvent&>(evt).GetZoomFactor());
++#endif
+     } else if (evt.GetEventType() == wxEVT_GESTURE_ROTATE) {
+         // Orca: Rotation starts a different navigation operation, so a previous pan anchor
+         // must not be reused; rotation and pan fallbacks share the same navigation pivot.
+@@ -7159,7 +7179,7 @@ void GLCanvas3D::render_thumbnail_framebuffer(ThumbnailData& thumbnail_data, uns
          BOOST_LOG_TRIVIAL(info) << boost::format("render_thumbnail prepare: GL_FRAMEBUFFER not complete");
      }
  
@@ -9159,7 +9182,7 @@ index 95944a8d..eadf76be 100644
      glsafe(::glDeleteRenderbuffers(1, &render_depth));
      if (render_tex_buffer != 0)
          glsafe(::glDeleteRenderbuffers(1, &render_tex_buffer));
-@@ -8288,9 +8293,11 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
+@@ -8288,9 +8308,11 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
              }
          }
  
@@ -9171,7 +9194,7 @@ index 95944a8d..eadf76be 100644
  
          glsafe(::glDisable(GL_BLEND));
          glsafe(::glEnable(GL_DEPTH_TEST));
-@@ -8333,8 +8340,10 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
+@@ -8333,8 +8355,10 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
          //BBS: remove the bed picking logic
          //_render_bed_for_picking(!wxGetApp().plater()->get_camera().is_looking_downward());
  
@@ -9182,7 +9205,7 @@ index 95944a8d..eadf76be 100644
  
          const size_t px_count = width * height;
  
-@@ -8387,7 +8396,7 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
+@@ -8387,7 +8411,7 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
                  main_camera.apply_viewport();
  
              if (framebuffers_type == OpenGLManager::EFramebufferType::Arb) {
@@ -9191,7 +9214,7 @@ index 95944a8d..eadf76be 100644
                  if (render_depth != 0)
                      glsafe(::glDeleteRenderbuffers(1, &render_depth));
                  if (render_fbo != 0)
-@@ -8548,8 +8557,8 @@ void GLCanvas3D::_render_fps_overlay(int fps) const
+@@ -8548,8 +8572,8 @@ void GLCanvas3D::_render_fps_overlay(int fps) const
          pos = ImVec2(legend->Pos.x - margin, legend->Pos.y);
      // The toolbar row can reach the corner on a narrow canvas; stack the overlay below it then.
      else if (m_main_toolbar.is_enabled() &&
@@ -9202,7 +9225,7 @@ index 95944a8d..eadf76be 100644
      ImGui::SetNextWindowPos(pos, ImGuiCond_Always, ImVec2(1.0f, 0.0f));
      ImGui::SetNextWindowBgAlpha(0.35f);
      ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f * get_scale());
-@@ -9880,9 +9889,20 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
+@@ -9880,9 +9904,20 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
      //BBS: GUI refactor: GLToolbar
  #if BBS_TOOLBAR_ON_TOP
      float collapse_toolbar_width = collapse_toolbar.is_enabled() ? collapse_toolbar.get_width() : 0;
@@ -9225,7 +9248,7 @@ index 95944a8d..eadf76be 100644
      float noitems_width = top_tb_width - size * items_cnt; // width of separators and borders in top toolbars
  
      // calculate scale needed for items in all top toolbars
-@@ -9895,6 +9915,15 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
+@@ -9895,6 +9930,15 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
  
      //use the same value as horizon
      float new_v_scale = new_h_scale;
@@ -9241,7 +9264,7 @@ index 95944a8d..eadf76be 100644
  #else
      float top_tb_width = = collapse_toolbar.get_width();
      int   items_cnt = collapse_toolbar.get_visible_items_cnt();
-@@ -10168,7 +10197,7 @@ int GLCanvas3D::get_main_toolbar_offset() const
+@@ -10168,7 +10212,7 @@ int GLCanvas3D::get_main_toolbar_offset() const
  {
      const float cnv_width              = get_canvas_size().get_width();
      const float collapse_toolbar_width = get_collapse_toolbar_width() * 2;
@@ -9250,7 +9273,7 @@ index 95944a8d..eadf76be 100644
      const float assemble_width         = m_assemble_view_toolbar.get_width();
      const float separator_width        = m_separator_toolbar.get_width();
      const float toolbar_total_width    = m_main_toolbar.get_width() + separator_width + gizmo_width + assemble_width + collapse_toolbar_width;
-@@ -10685,7 +10714,7 @@ void GLCanvas3D::_render_plate_switcher()
+@@ -10685,7 +10729,7 @@ void GLCanvas3D::_render_plate_switcher()
      const float   spacing   = 8.f * sc;
      const float   rounding  = 4.f * sc;
      const float   scrollbar = PLATE_TOOLBAR_SCROLLBAR * sc;
@@ -9259,7 +9282,7 @@ index 95944a8d..eadf76be 100644
      const float   content_h = plate_count * (btn_size.y + spacing) - spacing + 2.f * padding.y;
      const float   max_h     = std::max(btn_size.y + 2.f * padding.y, float(get_canvas_size().get_height()) - top - (canvas_corner_height() + CANVAS_TOOLBAR_MARGIN) * sc);
      // As in the Preview plate toolbar, the scrollbar shows only while the mouse is over the column.
-@@ -10758,7 +10787,7 @@ void GLCanvas3D::_render_assemble_view_toolbar() const
+@@ -10758,7 +10802,7 @@ void GLCanvas3D::_render_assemble_view_toolbar() const
          return;
  
      const Size cnv_size = get_canvas_size();
@@ -9268,7 +9291,7 @@ index 95944a8d..eadf76be 100644
      const float separator_width = m_separator_toolbar.get_width();
      const float top = 0.5f * (float)cnv_size.get_height();
      const float main_toolbar_left = -0.5f * cnv_size.get_width() + get_main_toolbar_offset();
-@@ -11186,7 +11215,7 @@ void GLCanvas3D::_render_separator_toolbar_right() const
+@@ -11186,7 +11230,7 @@ void GLCanvas3D::_render_separator_toolbar_right() const
          return;
  
      const Size cnv_size = get_canvas_size();
