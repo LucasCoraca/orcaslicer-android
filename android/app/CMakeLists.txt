@@ -13,7 +13,8 @@ foreach (_f ${_wx_java})
     get_filename_component(_n "${_f}" NAME)
     configure_file("${_f}" "${ORCA_APP_PACKAGE_DIR}/src/org/orcaport/wx/${_n}" COPYONLY)  # re-configures when the Java changes
 endforeach ()
-foreach (_f AndroidManifest.xml build.gradle)
+file(GLOB_RECURSE _pkg_res RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/package" CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/package/res/*")
+foreach (_f AndroidManifest.xml build.gradle ${_pkg_res})  # res/: the launcher icon
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/package/${_f}" "${ORCA_APP_PACKAGE_DIR}/${_f}" COPYONLY)
 endforeach ()
 
