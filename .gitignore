@@ -1,0 +1,29 @@
+# upstream checkouts (made by fetch-sources.sh)
+/orcaslicer-src/
+/third_party/
+# build output, dependency prefix, downloads, local tools
+/build/
+/deps-android/
+/dist/
+/dl-cache/
+/hosttools/
+/scratch-*/
+*.apk
+*.idsig
+# local emulator/test helpers
+/tap.sh
+/ptap.sh
+/e2e.sh
+/getlog.sh
+/dumptree.sh
+/wizard.sh
+/run-app.sh
+/sign-install.sh
+/serve-apk.sh
+/start-emulator.sh
+/start-phone-emulator.sh
+/configure-hello.sh
+/PLAN.md
+/docs-orca-main-window.png
+/.claude/
+/android/hello-wx/

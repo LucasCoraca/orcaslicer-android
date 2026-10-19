@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OrcaSlicer for Android</title>
+<meta name="description" content="The full OrcaSlicer desktop app (same slicing engine, same interface) running natively on Android phones and tablets. Unofficial community port.">
+<meta property="og:title" content="OrcaSlicer for Android">
+<meta property="og:description" content="The real OrcaSlicer, with the same engine and the same interface, running natively on Android phones and tablets.">
+<meta property="og:image" content="https://lucascoraca.github.io/orcaslicer-android/assets/og.jpg">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --teal: #009688;
+  --teal-2: #26a69a;
+  --teal-dim: rgba(0,150,136,.14);
+  --bg: #ffffff;
+  --bg-2: #f5f7f7;
+  --ink: #0f1a19;
+  --ink-2: #4a5958;
+  --line: #e2e8e7;
+  --card: #ffffff;
+  --hero-1: #0b1514;
+  --hero-2: #10302c;
+  --code-bg: #0f1a19;
+  --code-ink: #d6e4e2;
+  --shadow: 0 20px 60px -20px rgba(4,30,27,.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1211; --bg-2: #101a19; --ink: #e6eeed; --ink-2: #9db0ae; --line: #1f2c2b; --card: #121d1c;
+    --teal-dim: rgba(38,166,154,.16); --code-bg: #08100f; --shadow: 0 20px 60px -20px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b1211; --bg-2: #101a19; --ink: #e6eeed; --ink-2: #9db0ae; --line: #1f2c2b; --card: #121d1c;
+  --teal-dim: rgba(38,166,154,.16); --code-bg: #08100f; --shadow: 0 20px 60px -20px rgba(0,0,0,.7);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+img, video { max-width: 100%; height: auto; display: block; }
+a { color: var(--teal-2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+@media (max-width: 600px) { .wrap { padding: 0 16px; } }
+
+/* nav */
+nav.top { position: sticky; top: 0; z-index: 20; backdrop-filter: saturate(1.4) blur(14px); background: color-mix(in srgb, var(--hero-1) 82%, transparent); border-bottom: 1px solid rgba(255,255,255,.06); }
+nav.top .wrap { display: flex; align-items: center; gap: 28px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; letter-spacing: -.01em; }
+.brand img { width: 28px; height: 28px; border-radius: 7px; }
+.brand:hover { text-decoration: none; }
+.brand small { font-weight: 500; color: #8fb3ae; font-size: 12px; border: 1px solid #2a4743; border-radius: 99px; padding: 1px 8px; }
+nav.top .links { display: flex; gap: 22px; margin-left: auto; }
+nav.top .links a { color: #b9cfcc; font-size: 14px; font-weight: 500; }
+nav.top .links a:hover { color: #fff; text-decoration: none; }
+@media (max-width: 760px) { nav.top .links a:not(.gh) { display: none; } }
+.themebtn { background: none; border: 1px solid rgba(255,255,255,.18); color: #cfe0dd; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.themebtn:hover { background: rgba(255,255,255,.06); }
+.themebtn svg { width: 17px; height: 17px; }
+.themebtn .sun { display: none; }
+html.dark .themebtn .sun { display: block; }
+html.dark .themebtn .moon { display: none; }
+
+/* hero */
+.hero { background: radial-gradient(1200px 600px at 75% -10%, #1a5a52 0%, transparent 60%), linear-gradient(180deg, var(--hero-1), var(--hero-2)); color: #fff; overflow: hidden; }
+.hero .wrap { display: grid; grid-template-columns: 1fr 1.25fr; gap: 48px; align-items: center; padding-top: 72px; padding-bottom: 88px; }
+.eyebrow { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; font-weight: 600; color: #7fe0d4; background: rgba(0,150,136,.14); border: 1px solid rgba(38,166,154,.35); padding: 4px 12px; border-radius: 99px; }
+.eyebrow i { width: 7px; height: 7px; border-radius: 50%; background: #3ee0cc; box-shadow: 0 0 10px #3ee0cc; }
+h1 { font-size: clamp(38px, 5.4vw, 64px); line-height: 1.04; letter-spacing: -.035em; margin: 18px 0 18px; font-weight: 800; }
+h1 span { background: linear-gradient(90deg, #4ee6d2, #12b5a4); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lead { font-size: 19px; color: #b7cbc8; max-width: 520px; margin: 0 0 30px; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn { display: inline-flex; align-items: center; gap: 10px; padding: 13px 22px; border-radius: 12px; font-weight: 600; font-size: 15px; transition: transform .15s, background .15s; }
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
+.btn.primary { background: var(--teal); color: #fff; box-shadow: 0 10px 30px -8px rgba(0,150,136,.7); }
+.btn.primary:hover { background: var(--teal-2); }
+.btn.ghost { color: #fff; border: 1px solid rgba(255,255,255,.2); }
+.btn.ghost:hover { background: rgba(255,255,255,.06); }
+.btn svg { width: 18px; height: 18px; }
+.meta { margin-top: 18px; font-size: 13px; color: #7f9a96; }
+.devices { position: relative; min-height: 420px; }
+.tablet { border-radius: 26px; padding: 14px; background: #050909; box-shadow: 0 0 0 1px #233431, 0 40px 90px -20px rgba(0,0,0,.8); }
+.tablet img { border-radius: 14px; }
+.phone { position: absolute; width: 27%; right: -3%; bottom: -10%; border-radius: 30px; padding: 9px; background: #050909; box-shadow: 0 0 0 1px #2a3d3a, 0 30px 70px -10px rgba(0,0,0,.85); }
+.phone img { border-radius: 22px; }
+@media (max-width: 920px) {
+  .hero .wrap { grid-template-columns: 1fr; padding-top: 48px; padding-bottom: 72px; }
+  .devices { min-height: 0; margin-right: 8%; }
+}
+
+/* sections */
+section { padding: 96px 0; }
+section.alt { background: var(--bg-2); }
+.kicker { font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--teal-2); }
+h2 { font-size: clamp(28px, 3.4vw, 42px); letter-spacing: -.025em; line-height: 1.12; margin: 10px 0 14px; }
+.sub { color: var(--ink-2); font-size: 18px; max-width: 680px; margin: 0 0 44px; }
+@media (max-width: 600px) { section { padding: 64px 0; } }
+
+/* video */
+.videos { display: grid; grid-template-columns: 1600fr 450fr; gap: 22px; align-items: start; }
+.video { margin: 0; }
+.video video { width: 100%; border-radius: 16px; background: #000; box-shadow: var(--shadow); border: 1px solid var(--line); }
+.phonevid video { border-radius: 26px; border: 7px solid #0a1110; }
+.video figcaption { text-align: center; }
+@media (max-width: 760px) { .videos { grid-template-columns: 1fr; } .phonevid { max-width: 300px; margin: 0 auto; } }
+
+/* features */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+@media (max-width: 920px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 26px; }
+.card .ic { width: 42px; height: 42px; border-radius: 11px; background: var(--teal-dim); color: var(--teal-2); display: grid; place-items: center; margin-bottom: 16px; }
+.card .ic svg { width: 22px; height: 22px; }
+.card h3 { margin: 0 0 6px; font-size: 18px; letter-spacing: -.01em; }
+.card p { margin: 0; color: var(--ink-2); font-size: 15px; }
+
+/* gallery */
+.tabs { display: inline-flex; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px; margin-bottom: 26px; }
+.tabs button { font: inherit; font-weight: 600; font-size: 14px; border: 0; background: none; color: var(--ink-2); padding: 8px 18px; border-radius: 9px; cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--teal); color: #fff; }
+.shots { display: none; }
+.shots.on { display: grid; gap: 20px; }
+.shots.tab { grid-template-columns: repeat(2, 1fr); }
+.shots.ph { grid-template-columns: repeat(5, 1fr); }
+.galbar { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; margin-bottom: 26px; }
+.galbar .tabs { margin-bottom: 0; }
+@media (max-width: 920px) { .shots.tab { grid-template-columns: 1fr; } .shots.ph { grid-template-columns: repeat(2, 1fr); } }
+figure { margin: 0; }
+figure .frame { border-radius: 14px; overflow: hidden; border: 1px solid var(--line); box-shadow: var(--shadow); background: #000; cursor: zoom-in; }
+.shots.ph .frame { border-radius: 22px; border: 6px solid #0a1110; }
+figcaption { font-size: 14px; color: var(--ink-2); margin-top: 10px; }
+figcaption b { color: var(--ink); font-weight: 600; }
+.lightbox { position: fixed; inset: 0; background: rgba(3,8,8,.92); display: none; align-items: center; justify-content: center; z-index: 50; padding: 24px; cursor: zoom-out; }
+.lightbox.on { display: flex; }
+.lightbox img { max-height: 92vh; width: auto; border-radius: 10px; }
+
+/* architecture */
+.arch { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: start; }
+@media (max-width: 920px) { .arch { grid-template-columns: 1fr; } }
+.stack { display: grid; gap: 10px; }
+.layer { border-radius: 14px; padding: 16px 18px; border: 1px solid var(--line); background: var(--card); }
+.layer b { display: block; font-size: 15px; }
+.layer span { font-size: 14px; color: var(--ink-2); }
+.layer.orca { border-color: rgba(0,150,136,.5); background: var(--teal-dim); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.points { list-style: none; padding: 0; margin: 0; display: grid; gap: 18px; }
+.points li { display: grid; grid-template-columns: 26px 1fr; gap: 12px; }
+.points li::before { content: ""; width: 22px; height: 22px; margin-top: 2px; border-radius: 50%; background: var(--teal-dim) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2326a69a' stroke-width='3'%3E%3Cpath d='M5 12l5 5L20 7'/%3E%3C/svg%3E") center/13px no-repeat; }
+.points b { display: block; }
+.points span { color: var(--ink-2); font-size: 15px; }
+
+/* install / build */
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+@media (max-width: 920px) { .two { grid-template-columns: 1fr; } }
+ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
+ol.steps li::before { content: counter(s); width: 30px; height: 30px; border-radius: 9px; background: var(--teal); color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 14px; }
+pre { margin: 0; background: var(--code-bg); color: var(--code-ink); border-radius: 12px; padding: 18px 20px; overflow-x: auto; font: 13.5px/1.7 "JetBrains Mono", ui-monospace, monospace; }
+pre .c { color: #6f8a86; }
+code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .9em; }
+.status { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+@media (max-width: 760px) { .status { grid-template-columns: 1fr; } }
+.status ul { margin: 0; padding-left: 20px; color: var(--ink-2); }
+.status li { margin: 6px 0; }
+.pill { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 99px; margin-bottom: 12px; }
+.pill.ok { background: var(--teal-dim); color: var(--teal-2); }
+.pill.wip { background: rgba(240,160,40,.15); color: #d58a12; }
+
+.notice { border: 1px solid var(--line); border-left: 4px solid var(--teal); background: var(--card); border-radius: 12px; padding: 16px 20px; color: var(--ink-2); font-size: 15px; }
+
+footer { background: var(--hero-1); color: #8ea7a3; padding: 48px 0; font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; align-items: center; }
+footer a { color: #b9cfcc; }
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="brand" href="#"><img src="assets/icon.png" alt="">OrcaSlicer for Android <small>preview</small></a>
+    <div class="links">
+      <a href="#video">Demo</a>
+      <a href="#features">Features</a>
+      <a href="#screenshots">Screenshots</a>
+      <a href="#how">How it works</a>
+      <a href="#install">Install</a>
+      <a class="gh" href="https://github.com/LucasCoraca/orcaslicer-android">GitHub</a>
+      <button class="themebtn" id="themebtn" aria-label="Toggle dark mode" title="Toggle dark mode">
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2.5M12 20v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M1.5 12h2.5M20 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div>
+      <div class="eyebrow"><i></i>Unofficial community port · v0.1 preview</div>
+      <h1>The real OrcaSlicer, <span>on Android.</span></h1>
+      <p class="lead">Not a companion app and not a rewrite. The same slicing engine and the same interface as the desktop version, compiled natively for Android phones and tablets and adapted for touch.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/LucasCoraca/orcaslicer-android/releases/latest">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>
+          Download APK
+        </a>
+        <a class="btn ghost" href="https://github.com/LucasCoraca/orcaslicer-android">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 00-3.64 22.42c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.56-.29-5.25-1.28-5.25-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 015.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.7 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0012 .5z"/></svg>
+          Source on GitHub
+        </a>
+      </div>
+      <div class="meta">Android 9+ · arm64 &amp; x86_64 · AGPL-3.0 · based on OrcaSlicer 2.5.0-dev</div>
+    </div>
+    <div class="devices">
+      <div class="tablet"><img data-shot="tablet-prepare" src="assets/screens/dark/tablet-prepare.jpg" alt="OrcaSlicer on an Android tablet with a 3DBenchy on the plate" width="1600" height="1000"></div>
+      <div class="phone"><img data-shot="phone-prepare" src="assets/screens/dark/phone-prepare.jpg" alt="OrcaSlicer on an Android phone" width="540" height="1200"></div>
+    </div>
+  </div>
+</header>
+
+<section id="video">
+  <div class="wrap">
+    <div class="kicker">Demo</div>
+    <h2>From an empty plate to G-code.</h2>
+    <p class="sub">Real screen recordings on a tablet and on a phone, sped up 1.6×: add a model from the long-press menu, move, rotate and scale it with a finger, look through the settings, then slice.</p>
+    <div class="videos">
+      <figure class="video"><video src="assets/demo-tablet.mp4" poster="assets/demo-tablet-poster.jpg" controls muted loop playsinline preload="metadata"></video><figcaption>Tablet · 2560×1600</figcaption></figure>
+      <figure class="video phonevid"><video src="assets/demo-phone.mp4" poster="assets/demo-phone-poster.jpg" controls muted loop playsinline preload="metadata"></video><figcaption>Phone · 1080×2400</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="alt">
+  <div class="wrap">
+    <div class="kicker">Features</div>
+    <h2>Everything you use on the desktop.</h2>
+    <p class="sub">This is Orca's own code, so the features are the same: the profiles, the gizmos, every setting and the calibration tools.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg></div>
+        <h3>Same slicing engine</h3>
+        <p><code>libslic3r</code> is built from upstream without changes, with the same algorithms, the same printer profiles and the same G-code as the desktop version.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18M8 21h8"/></svg></div>
+        <h3>Same interface</h3>
+        <p>Orca's wxWidgets GUI runs on Android through wxWidgets' Qt backend: Prepare, Preview, gizmos, presets and the settings tabs.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5a2 2 0 014 0v6"/><path d="M13 9a2 2 0 014 0v3"/><path d="M17 11a2 2 0 014 0v3a8 8 0 01-8 8h-1a7 7 0 01-6-3.4L3.5 15a2 2 0 013.3-2.2L9 15"/></svg></div>
+        <h3>Built for touch</h3>
+        <p>Tap to select and drag to move. Long-press for context menus. Pinch to zoom, two fingers to pan, twist to rotate. Kinetic scrolling, and the back button closes dialogs.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="13" height="15" rx="2"/><rect x="17" y="8" width="5" height="12" rx="1.5"/></svg></div>
+        <h3>Phones and tablets</h3>
+        <p>Tablets get the full desktop layout. Phones get a compact one: settings full screen behind a "3D view" button, a vertical gizmo column, and compact bars.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16M4 4h7l2 3h7v9H4z"/></svg></div>
+        <h3>System file picker</h3>
+        <p>Open STL and 3MF files from local storage, Google Drive or any document provider through Android's Storage Access Framework.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z"/></svg></div>
+        <h3>Native and multi-core</h3>
+        <p>Compiled C++ for arm64 with OpenGL ES 3 rendering. Slicing uses every CPU core through TBB, like the desktop version.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="screenshots">
+  <div class="wrap">
+    <div class="kicker">Screenshots</div>
+    <h2>It looks like Orca because it is Orca.</h2>
+    <p class="sub">Captured on Android emulators: a 2560×1600 tablet and a 1080×2400 phone. Orca follows the system's light or dark theme. Tap an image to enlarge it.</p>
+    <div class="galbar">
+      <div class="tabs" role="tablist" data-group="device">
+        <button role="tab" aria-selected="true" data-tab="tab">Tablet</button>
+        <button role="tab" aria-selected="false" data-tab="ph">Phone</button>
+      </div>
+      <div class="tabs" role="tablist" data-group="theme" aria-label="App theme">
+        <button role="tab" aria-selected="false" data-theme-set="light">Light</button>
+        <button role="tab" aria-selected="true" data-theme-set="dark">Dark</button>
+      </div>
+    </div>
+    <div class="shots tab on" data-panel="tab">
+      <figure><div class="frame"><img loading="lazy" data-shot="tablet-prepare" src="assets/screens/dark/tablet-prepare.jpg" alt=""></div><figcaption><b>Prepare.</b> The full desktop layout with the process settings on the left.</figcaption></figure>
+      <figure><div class="frame"><img loading="lazy" data-shot="tablet-menu" src="assets/screens/dark/tablet-menu.jpg" alt=""></div><figcaption><b>Long-press menus.</b> Every right-click menu, here the plate menu with handy models.</figcaption></figure>
+      <figure><div class="frame"><img loading="lazy" data-shot="tablet-move" src="assets/screens/dark/tablet-move.jpg" alt=""></div><figcaption><b>Move.</b> Drag an arrow with a finger, or type exact coordinates.</figcaption></figure>
+      <figure><div class="frame"><img loading="lazy" data-shot="tablet-rotate" src="assets/screens/dark/tablet-rotate.jpg" alt=""></div><figcaption><b>Rotate.</b> The gizmos work exactly as on the desktop.</figcaption></figure>
+      <figure><div class="frame"><img loading="lazy" data-shot="tablet-settings" src="assets/screens/dark/tablet-settings.jpg" alt=""></div><figcaption><b>Every setting.</b> Quality, strength, support and the rest, with presets.</figcaption></figure>
+      <figure><div class="frame"><img loading="lazy" data-shot="tablet-home" src="assets/screens/dark/tablet-home.jpg" alt=""></div><figcaption><b>Home.</b> Recent projects and quick start.</figcaption></figure>
+    </div>
+    <div class="shots ph" data-panel="ph">
+      <figure><div class="frame"><img loading="lazy" data-shot="phone-prepare" src="assets/screens/dark/phone-prepare.jpg" alt=""></div><figcaption><b>3D view.</b> Full screen, gizmos in a column.</figcaption></figure>
+      <figure><div class="frame"><img loading="lazy" data-shot="phone-rotate" src="assets/screens/dark/phone-rotate.jpg" alt=""></div><figcaption><b>Gizmos.</b> Sized for fingers.</figcaption></figure>
+      <figure><div class="frame"><img loading="lazy" data-shot="phone-settings" src="assets/screens/dark/phone-settings.jpg" alt=""></div><figcaption><b>Settings.</b> One tap away, with a "3D view" button back.</figcaption></figure>
+      <figure><div class="frame"><img loading="lazy" data-shot="phone-menu" src="assets/screens/dark/phone-menu.jpg" alt=""></div><figcaption><b>Menus.</b> Long-press for the context menus.</figcaption></figure>
+      <figure><div class="frame"><img loading="lazy" data-shot="phone-home" src="assets/screens/dark/phone-home.jpg" alt=""></div><figcaption><b>Home.</b> Stacked for narrow screens.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="how" class="alt">
+  <div class="wrap arch">
+    <div>
+      <div class="kicker">How it works</div>
+      <h2>A port, not a rewrite.</h2>
+      <p class="sub" style="margin-bottom:28px">OrcaSlicer's interface is written against wxWidgets. wxWidgets has no Android backend, but it has a Qt one, and Qt runs on Android. The port makes that chain work on a touch screen.</p>
+      <ul class="points">
+        <li><div><b>wxWidgets on Qt, fixed for Android</b><span>DPI-correct painting, full-screen windows and on-screen dialogs, touch converted to mouse and gesture events, kinetic scrolling, and shared GL contexts for the 3D views.</span></div></li>
+        <li><div><b>OpenGL ES 3</b><span>Orca's GLSL shaders are converted to GLSL ES, with a GLES loader and ES-safe render paths in the 3D scene and the G-code viewer.</span></div></li>
+        <li><div><b>Android services</b><span>Java bridges for the system WebView and the Keystore. The native file picker handles <code>content://</code> URIs, and saved files are copied back through the Storage Access Framework.</span></div></li>
+        <li><div><b>Two patches, pinned upstream</b><span>Every change is kept as one patch for OrcaSlicer and one for wxWidgets, so the port can follow upstream.</span></div></li>
+      </ul>
+    </div>
+    <div class="stack">
+      <div class="layer orca"><b>OrcaSlicer GUI</b><span>src/slic3r/GUI: Orca's own interface, with small <code>__ANDROID__</code> layout tweaks</span></div>
+      <div class="row2">
+        <div class="layer"><b>wxWidgets 3.3</b><span>Orca's fork, wxQt backend + Android patches</span></div>
+        <div class="layer orca"><b>libslic3r</b><span>slicing engine, unchanged</span></div>
+      </div>
+      <div class="row2">
+        <div class="layer"><b>Qt 6.8 Widgets</b><span>for Android</span></div>
+        <div class="layer"><b>Boost · TBB · CGAL · OCCT · OpenVDB</b><span>cross-compiled with the NDK</span></div>
+      </div>
+      <div class="layer"><b>Android</b><span>OpenGL ES 3 / EGL · WebView · Storage Access Framework · API 28+</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <div class="kicker">Get it</div>
+    <h2>Install or build it yourself.</h2>
+    <p class="sub">Preview builds are published on GitHub Releases. The whole port is open source under the AGPL, the same licence as OrcaSlicer.</p>
+    <div class="two">
+      <div class="card">
+        <h3 style="margin-bottom:18px">Install the APK</h3>
+        <ol class="steps">
+          <li><div>Download <a href="https://github.com/LucasCoraca/orcaslicer-android/releases/latest"><code>OrcaSlicer-android-arm64-preview.apk</code></a>. It is the right file for almost every phone and tablet. Use <code>x86_64</code> for emulators and Chromebooks.</div></li>
+          <li><div>Allow your browser or file manager to install apps when Android asks.</div></li>
+          <li><div>Open <b>Orca Slicer</b>. The first start unpacks the printer profiles, which takes a few seconds.</div></li>
+        </ol>
+        <p style="color:var(--ink-2);font-size:14px;margin:20px 0 0">Requires Android 9 or newer and OpenGL ES 3.0. 6 GB of RAM or more is recommended for large models.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:18px">Build from source</h3>
+<pre><span class="c"># Linux host · Android NDK 29 · Qt 6.8.3 for Android · JDK 17</span>
+git clone https://github.com/LucasCoraca/orcaslicer-android
+cd orcaslicer-android
+./fetch-sources.sh        <span class="c"># pinned upstream + patches</span>
+./configure-deps.sh arm64-v8a &amp;&amp; ./run-deps.sh arm64
+./configure-wx.sh arm64-v8a
+ninja -C build/wx-arm64-v8a install
+./configure-app.sh arm64-v8a
+./build-all.sh arm64-v8a  <span class="c"># → dist/*.apk</span></pre>
+        <p style="color:var(--ink-2);font-size:14px;margin:16px 0 0">Prerequisites and environment variables are listed in the <a href="https://github.com/LucasCoraca/orcaslicer-android#building-from-source">README</a>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <div class="kicker">Status</div>
+    <h2>Preview quality, and improving.</h2>
+    <p class="sub">Most of Orca already works. Here is what is known to be missing.</p>
+    <div class="status">
+      <div class="card">
+        <span class="pill ok">Working</span>
+        <ul>
+          <li>Model import (STL, 3MF), handy models and primitives</li>
+          <li>Selection, arrange, and the move, rotate and scale gizmos</li>
+          <li>All printer, filament and process settings, and presets</li>
+          <li>Slicing, with the result, the legend and the layer sliders</li>
+          <li>Setup wizard, Home page, menus and dialogs</li>
+          <li>Touch gestures and the compact phone layout</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="pill wip">Not yet</span>
+        <ul>
+          <li>Bambu Lab cloud and network plugin (closed-source desktop binary)</li>
+          <li>Printer camera view</li>
+          <li>Some web dialogs, such as printer selection, on narrow phone screens</li>
+          <li>Landscape phones and foldables: works, but not tuned yet</li>
+          <li>Large models are slower than on a desktop</li>
+          <li>On emulators with a software GPU the Preview toolpaths render black, so these screenshots show the Prepare view</li>
+        </ul>
+      </div>
+    </div>
+    <p class="notice" style="margin-top:28px">This is an independent, unofficial project. It is not affiliated with or endorsed by the OrcaSlicer team, Bambu Lab or SoftFever. OrcaSlicer is developed at <a href="https://github.com/OrcaSlicer/OrcaSlicer">github.com/OrcaSlicer/OrcaSlicer</a>, and bugs in this port should be reported <a href="https://github.com/LucasCoraca/orcaslicer-android/issues">here</a>, not upstream.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>OrcaSlicer for Android · AGPL-3.0 · Built on OrcaSlicer, Bambu Studio, PrusaSlicer, Slic3r, wxWidgets and Qt.</div>
+    <div><a href="https://github.com/LucasCoraca/orcaslicer-android">GitHub</a> · <a href="https://github.com/LucasCoraca/orcaslicer-android/releases">Releases</a> · <a href="https://github.com/LucasCoraca/orcaslicer-android/issues">Issues</a></div>
+  </div>
+</footer>
+
+<div class="lightbox" id="lb"><img alt=""></div>
+<script>
+// site theme: system default, overridable, remembered
+const root = document.documentElement;
+const sysDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
+let siteTheme = null; try { siteTheme = localStorage.getItem('theme'); } catch (e) {}
+function applySite(t) {
+  const dark = t ? t === 'dark' : sysDark();
+  if (t) root.dataset.theme = t; else delete root.dataset.theme;
+  root.classList.toggle('dark', dark);
+  setApp(dark ? 'dark' : 'light');
+}
+function setApp(t) {
+  document.querySelectorAll('img[data-shot]').forEach(i => { i.src = 'assets/screens/' + t + '/' + i.dataset.shot + '.jpg'; });
+  document.querySelectorAll('[data-theme-set]').forEach(b => b.setAttribute('aria-selected', b.dataset.themeSet === t));
+}
+document.getElementById('themebtn').addEventListener('click', () => {
+  siteTheme = root.classList.contains('dark') ? 'light' : 'dark';
+  try { localStorage.setItem('theme', siteTheme); } catch (e) {}
+  applySite(siteTheme);
+});
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (!siteTheme) applySite(null); });
+document.querySelectorAll('[data-theme-set]').forEach(b => b.addEventListener('click', () => setApp(b.dataset.themeSet)));
+applySite(siteTheme);
+document.querySelectorAll('[data-group="device"] button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-group="device"] button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.shots').forEach(p => p.classList.toggle('on', p.dataset.panel === b.dataset.tab));
+}));
+const lb = document.getElementById('lb');
+document.querySelectorAll('.frame img').forEach(i => i.addEventListener('click', () => { lb.querySelector('img').src = i.src; lb.classList.add('on'); }));
+lb.addEventListener('click', () => lb.classList.remove('on'));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') lb.classList.remove('on'); });
+</script>
+</body>
+</html>

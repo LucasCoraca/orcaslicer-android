@@ -1,0 +1,2836 @@
+diff --git a/build/cmake/files.cmake b/build/cmake/files.cmake
+index c163c87..8282435 100644
+--- a/build/cmake/files.cmake
++++ b/build/cmake/files.cmake
+@@ -367,6 +367,7 @@ set(QT_SRC
+     src/qt/uiaction.cpp
+     src/qt/utils.cpp
+     src/qt/window.cpp
++    src/qt/secretstore_android.cpp
+     src/qt/dvrenderers.cpp
+     src/qt/dvrenderer.cpp
+     src/generic/activityindicator.cpp
+@@ -2475,6 +2476,15 @@ set(HTML_MSW_HDR
+     wx/msw/helpbest.h
+ )
+ 
++set(WEBVIEW_ANDROID_SRC
++    src/qt/webview_android.cpp
++)
++
++set(WEBVIEW_ANDROID_HDR
++    wx/qt/webview_android.h
++    wx/qt/webviewhistoryitem_android.h
++)
++
+ set(WEBVIEW_CMN_SRC
+     src/common/webview_chromium.cpp
+     src/common/webviewarchivehandler.cpp
+diff --git a/build/cmake/init.cmake b/build/cmake/init.cmake
+index 418fe12..34b2019 100644
+--- a/build/cmake/init.cmake
++++ b/build/cmake/init.cmake
+@@ -391,7 +391,7 @@ if (wxUSE_WEBREQUEST)
+ endif()
+ 
+ if(UNIX)
+-    if(wxUSE_SECRETSTORE AND NOT APPLE)
++    if(wxUSE_SECRETSTORE AND NOT APPLE AND NOT ANDROID)
+         # The required APIs are always available under MSW and OS X but we must
+         # have GNOME libsecret under Unix to be able to compile this class.
+         find_package(LIBSECRET)
+@@ -438,7 +438,9 @@ if(wxUSE_GUI)
+ 
+     # WXQT checks
+     if(WXQT)
+-        wx_option_force_value(wxUSE_WEBVIEW OFF)
++        if(NOT ANDROID)
++            wx_option_force_value(wxUSE_WEBVIEW OFF)
++        endif()
+         wx_option_force_value(wxUSE_METAFILE OFF)
+         if(WIN32)
+             wx_option_force_value(wxUSE_ACCESSIBILITY OFF)
+@@ -521,6 +523,12 @@ if(wxUSE_GUI)
+             set(OPENGL_LIBRARIES "-framework OpenGLES" "-framework QuartzCore" "-framework GLKit")
+         else()
+             find_package(OpenGL)
++            if(ANDROID AND WXQT AND NOT OPENGL_FOUND)
++                # Android only has GLES; QOpenGLWidget (used by wxGLCanvas) picks the context.
++                set(OPENGL_FOUND TRUE)
++                set(OPENGL_LIBRARIES ${OPENGL_gles2_LIBRARY})
++                set(OPENGL_INCLUDE_DIR ${OPENGL_GLES2_INCLUDE_DIR})
++            endif()
+             if(OPENGL_FOUND)
+                 foreach(gltarget OpenGL::GL OpenGL::OpenGL)
+                     if(TARGET ${gltarget})
+diff --git a/build/cmake/install.cmake b/build/cmake/install.cmake
+index 88591a8..6466d62 100644
+--- a/build/cmake/install.cmake
++++ b/build/cmake/install.cmake
+@@ -21,6 +21,21 @@ foreach(header ${wxINSTALL_HEADERS})
+     )
+ endforeach()
+ 
++if(ANDROID)
++    # wx/platform.h includes wx/android/config_android.h, which is not in the header list
++    install(
++        DIRECTORY "${wxSOURCE_DIR}/include/wx/android"
++        DESTINATION "${wxINSTALL_INCLUDE_DIR}/wx"
++    )
++    # Orca includes a few private wx headers (accessibility, markup text, ...)
++    foreach(_priv private generic/private qt/private)
++        install(
++            DIRECTORY "${wxSOURCE_DIR}/include/wx/${_priv}"
++            DESTINATION "${wxINSTALL_INCLUDE_DIR}/wx/${_priv}/.."
++        )
++    endforeach()
++endif()
++
+ if(MSVC)
+     install(
+         DIRECTORY "${wxSOURCE_DIR}/include/msvc"
+diff --git a/build/cmake/lib/base/CMakeLists.txt b/build/cmake/lib/base/CMakeLists.txt
+index a09d239..251b5ec 100644
+--- a/build/cmake/lib/base/CMakeLists.txt
++++ b/build/cmake/lib/base/CMakeLists.txt
+@@ -39,7 +39,7 @@ if(wxUSE_LIBLZMA)
+     wx_lib_include_directories(wxbase ${LIBLZMA_INCLUDE_DIRS})
+     wx_lib_link_libraries(wxbase PRIVATE ${LIBLZMA_LIBRARIES})
+ endif()
+-if(UNIX AND wxUSE_SECRETSTORE)
++if(UNIX AND wxUSE_SECRETSTORE AND NOT ANDROID)
+     wx_lib_include_directories(wxbase ${LIBSECRET_INCLUDE_DIRS})
+     # Avoid linking with libsecret-1.so directly, we load this
+     # library dynamically in wxSecretStoreLibSecretImpl to avoid
+diff --git a/build/cmake/lib/net/CMakeLists.txt b/build/cmake/lib/net/CMakeLists.txt
+index d24e835..7599328 100644
+--- a/build/cmake/lib/net/CMakeLists.txt
++++ b/build/cmake/lib/net/CMakeLists.txt
+@@ -30,6 +30,11 @@ if(WIN32)
+ endif()
+ 
+ if (wxUSE_WEBREQUEST_CURL)
+-    wx_lib_include_directories(wxnet ${CURL_INCLUDE_DIRS})
+-    wx_lib_link_libraries(wxnet PUBLIC ${CURL_LIBRARIES})
++    if(TARGET CURL::libcurl)
++        # CURL's CONFIG package (used for the Orca deps prefix) only provides the imported target
++        wx_lib_link_libraries(wxnet PUBLIC CURL::libcurl)
++    else()
++        wx_lib_include_directories(wxnet ${CURL_INCLUDE_DIRS})
++        wx_lib_link_libraries(wxnet PUBLIC ${CURL_LIBRARIES})
++    endif()
+ endif()
+diff --git a/build/cmake/lib/webview/CMakeLists.txt b/build/cmake/lib/webview/CMakeLists.txt
+index ae16517..fb70bc6 100644
+--- a/build/cmake/lib/webview/CMakeLists.txt
++++ b/build/cmake/lib/webview/CMakeLists.txt
+@@ -35,6 +35,8 @@ elseif(WXGTK)
+     wx_append_sources(WEBVIEW_FILES WEBVIEW_GTK)
+ elseif(APPLE)
+     wx_append_sources(WEBVIEW_FILES WEBVIEW_OSX_SHARED)
++elseif(WXQT AND ANDROID)
++    wx_append_sources(WEBVIEW_FILES WEBVIEW_ANDROID)
+ endif()
+ 
+ wx_add_library(wxwebview ${WEBVIEW_FILES})
+diff --git a/build/cmake/options.cmake b/build/cmake/options.cmake
+index 0a9783b..4a762e5 100644
+--- a/build/cmake/options.cmake
++++ b/build/cmake/options.cmake
+@@ -473,6 +473,10 @@ if(WIN32 OR APPLE)
+ else()
+     set(wxUSE_PRIVATE_FONTS_DEFAULT OFF)
+ endif()
++if(WXQT)
++    # wxFont::AddPrivateFont() through QFontDatabase::addApplicationFont()
++    set(wxUSE_PRIVATE_FONTS_DEFAULT ON)
++endif()
+ wx_option(wxUSE_PRIVATE_FONTS "use fonts not installed on the system" ${wxUSE_PRIVATE_FONTS_DEFAULT})
+ 
+ # ---------------------------------------------------------------------------
+diff --git a/build/cmake/toolkit.cmake b/build/cmake/toolkit.cmake
+index ab997cc..23a0b23 100644
+--- a/build/cmake/toolkit.cmake
++++ b/build/cmake/toolkit.cmake
+@@ -134,7 +134,7 @@ if(WXQT)
+     if(QT_VERSION_MAJOR EQUAL 5)
+         set(QT_COMPONENTS Core Widgets Gui OpenGL OpenGL Test PrintSupport)
+     elseif(QT_VERSION_MAJOR EQUAL 6)
+-        set(QT_COMPONENTS Core Widgets Gui OpenGL OpenGLWidgets Test PrintSupport)
++        set(QT_COMPONENTS Core Widgets Gui OpenGL OpenGLWidgets PrintSupport)
+     endif()
+ 
+     foreach(QT_COMPONENT ${QT_COMPONENTS})
+diff --git a/build/cmake/utils/CMakeLists.txt b/build/cmake/utils/CMakeLists.txt
+index 608351a..474da7d 100644
+--- a/build/cmake/utils/CMakeLists.txt
++++ b/build/cmake/utils/CMakeLists.txt
+@@ -7,7 +7,7 @@
+ # Licence:     wxWindows licence
+ #############################################################################
+ 
+-if(wxUSE_XRC)
++if(wxUSE_XRC AND NOT ANDROID) # wxrc is a host tool
+     add_executable(wxrc "${wxSOURCE_DIR}/utils/wxrc/wxrc.cpp")
+     wx_set_common_target_properties(wxrc)
+     if(wxUSE_XML)
+diff --git a/build/cmake/wxWidgetsConfig.cmake.in b/build/cmake/wxWidgetsConfig.cmake.in
+index 2593c04..236f583 100644
+--- a/build/cmake/wxWidgetsConfig.cmake.in
++++ b/build/cmake/wxWidgetsConfig.cmake.in
+@@ -178,7 +178,7 @@ if(TARGET wx::wxnet AND @wxUSE_WEBREQUEST_CURL@)
+     find_dependency(CURL)
+ endif()
+ 
+-if(TARGET wx::wxgl AND NOT (APPLE AND IOS))
++if(TARGET wx::wxgl AND NOT (APPLE AND IOS) AND NOT ANDROID)
+     # make sure OpenGL targets are available:
+     # The link interface of target "wx::wxgl" contains: OpenGL::GLU
+     find_dependency(OpenGL)
+diff --git a/include/wx/chkconf.h b/include/wx/chkconf.h
+index 55d7045..95bc1f8 100644
+--- a/include/wx/chkconf.h
++++ b/include/wx/chkconf.h
+@@ -2272,7 +2272,8 @@
+ 
+ #if wxUSE_WEBVIEW && !(wxUSE_WEBVIEW_WEBKIT || wxUSE_WEBVIEW_WEBKIT2 || \
+                        wxUSE_WEBVIEW_IE || wxUSE_WEBVIEW_EDGE || \
+-                       wxUSE_WEBVIEW_CHROMIUM)
++                       wxUSE_WEBVIEW_CHROMIUM || \
++                       (defined(__WXQT__) && defined(__ANDROID__)))
+ #   ifdef wxABORT_ON_CONFIG_ERROR
+ #       error "wxUSE_WEBVIEW requires at least one backend"
+ #   else
+@@ -2318,7 +2319,7 @@
+ #endif /* wxUSE_PREFERENCES_EDITOR */
+ 
+ #if wxUSE_PRIVATE_FONTS
+-#   if !defined(__WXMSW__) && !defined(__WXGTK__) && !defined(__WXOSX__)
++#   if !defined(__WXMSW__) && !defined(__WXGTK__) && !defined(__WXOSX__) && !defined(__WXQT__)
+ #       undef wxUSE_PRIVATE_FONTS
+ #       define wxUSE_PRIVATE_FONTS 0
+ #   endif
+diff --git a/include/wx/generic/dvrenderers.h b/include/wx/generic/dvrenderers.h
+index 1cc2ad9..c1a640a 100644
+--- a/include/wx/generic/dvrenderers.h
++++ b/include/wx/generic/dvrenderers.h
+@@ -203,6 +203,12 @@ public:
+     wxDataViewIconTextRenderer( const wxString &varianttype = GetDefaultType(),
+                                 wxDataViewCellMode mode = wxDATAVIEW_CELL_INERT,
+                                 int align = wxDVR_DEFAULT_ALIGNMENT );
++    virtual ~wxDataViewIconTextRenderer();
++
++#if wxUSE_MARKUP
++    // As in wxDataViewTextRenderer; used by Orca on GTK/MSW/OSX, so offered here too.
++    void EnableMarkup(bool enable = true);
++#endif // wxUSE_MARKUP
+ 
+     virtual bool SetValue( const wxVariant &value ) override;
+     virtual bool GetValue( wxVariant &value ) const override;
+@@ -221,6 +227,10 @@ public:
+ private:
+     wxDataViewIconText   m_value;
+ 
++#if wxUSE_MARKUP
++    class wxItemMarkupText *m_markupText;
++#endif // wxUSE_MARKUP
++
+ protected:
+     wxDECLARE_DYNAMIC_CLASS_NO_COPY(wxDataViewIconTextRenderer);
+ };
+diff --git a/include/wx/private/secretstore.h b/include/wx/private/secretstore.h
+index 8f7f88f..c9add8c 100644
+--- a/include/wx/private/secretstore.h
++++ b/include/wx/private/secretstore.h
+@@ -34,7 +34,7 @@ public:
+ };
+ 
+ // Trivial common implementation of wxSecretValueImpl used under MSW and OS X.
+-#if defined(__WINDOWS__) || defined(__DARWIN__)
++#if defined(__WINDOWS__) || defined(__DARWIN__) || defined(__ANDROID__)
+ 
+ class wxSecretValueGenericImpl : public wxSecretValueImpl
+ {
+diff --git a/include/wx/qt/dvrenderers.h b/include/wx/qt/dvrenderers.h
+index dc57dc3..ccda993 100644
+--- a/include/wx/qt/dvrenderers.h
++++ b/include/wx/qt/dvrenderers.h
+@@ -25,6 +25,8 @@ public:
+     bool GetValue( wxVariant &value ) const;
+ 
+     void SetAlignment( int align );
++
++    void EnableMarkup(bool enable = true) { wxUnusedVar(enable); }
+ };
+ 
+ // ---------------------------------------------------------
+@@ -145,6 +147,9 @@ public:
+     virtual bool HasEditorCtrl() const { return true; }
+     virtual wxControl* CreateEditorCtrl( wxWindow *parent, wxRect labelRect, const wxVariant &value );
+     virtual bool GetValueFromEditorCtrl( wxControl* editor, wxVariant &value );
++
++    // Present on the GTK/MSW/OSX renderers (used by Orca); the Qt model has no markup support.
++    void EnableMarkup(bool enable = true) { wxUnusedVar(enable); }
+ };
+ 
+ // ---------------------------------------------------------
+diff --git a/include/wx/qt/glcanvas.h b/include/wx/qt/glcanvas.h
+index 847316d..97474c9 100644
+--- a/include/wx/qt/glcanvas.h
++++ b/include/wx/qt/glcanvas.h
+@@ -8,7 +8,11 @@
+ #ifndef _WX_GLCANVAS_H_
+ #define _WX_GLCANVAS_H_
+ 
+-#include <GL/gl.h>
++#ifdef __ANDROID__
++    #include <GLES3/gl3.h>
++#else
++    #include <GL/gl.h>
++#endif
+ 
+ class QOpenGLWidget;
+ class QOpenGLContext;
+diff --git a/include/wx/qt/private/winevent.h b/include/wx/qt/private/winevent.h
+index 8933a1a..b6bc935 100644
+--- a/include/wx/qt/private/winevent.h
++++ b/include/wx/qt/private/winevent.h
+@@ -249,7 +249,13 @@ protected:
+             return;
+ 
+         if ( !this->GetHandler()->QtHandleMouseEvent(this, event) )
++        {
+             Widget::mouseDoubleClickEvent(event);
++            // wx mouse events are not propagated to the parent window. Letting Qt do it (an ignored press
++            // travels up the parent chain) would also make the parent the mouse grabber, so this window
++            // would never see the release and e.g. custom buttons would never click.
++            event->accept();
++        }
+         else
+             event->accept();
+     }
+@@ -261,7 +267,13 @@ protected:
+             return;
+ 
+         if ( !this->GetHandler()->QtHandleMouseEvent(this, event) )
++        {
+             Widget::mouseMoveEvent(event);
++            // wx mouse events are not propagated to the parent window. Letting Qt do it (an ignored press
++            // travels up the parent chain) would also make the parent the mouse grabber, so this window
++            // would never see the release and e.g. custom buttons would never click.
++            event->accept();
++        }
+         else
+             event->accept();
+     }
+@@ -273,7 +285,13 @@ protected:
+             return;
+ 
+         if ( !this->GetHandler()->QtHandleMouseEvent(this, event) )
++        {
+             Widget::mousePressEvent(event);
++            // wx mouse events are not propagated to the parent window. Letting Qt do it (an ignored press
++            // travels up the parent chain) would also make the parent the mouse grabber, so this window
++            // would never see the release and e.g. custom buttons would never click.
++            event->accept();
++        }
+         else
+             event->accept();
+     }
+@@ -285,7 +303,13 @@ protected:
+             return;
+ 
+         if ( !this->GetHandler()->QtHandleMouseEvent(this, event) )
++        {
+             Widget::mouseReleaseEvent(event);
++            // wx mouse events are not propagated to the parent window. Letting Qt do it (an ignored press
++            // travels up the parent chain) would also make the parent the mouse grabber, so this window
++            // would never see the release and e.g. custom buttons would never click.
++            event->accept();
++        }
+         else
+             event->accept();
+     }
+diff --git a/include/wx/qt/toplevel.h b/include/wx/qt/toplevel.h
+index a544e9c..bce2827 100644
+--- a/include/wx/qt/toplevel.h
++++ b/include/wx/qt/toplevel.h
+@@ -53,6 +53,9 @@ protected:
+     virtual void DoSetSizeHints( int minW, int minH,
+                                  int maxW, int maxH,
+                                  int incW, int incH) override;
++#ifdef __ANDROID__
++    virtual void DoSetSize(int x, int y, int width, int height, int sizeFlags = wxSIZE_AUTO) override;
++#endif
+ };
+ 
+ #endif // _WX_QT_TOPLEVEL_H_
+diff --git a/include/wx/qt/webview_android.h b/include/wx/qt/webview_android.h
+new file mode 100644
+index 0000000..21093b9
+--- /dev/null
++++ b/include/wx/qt/webview_android.h
+@@ -0,0 +1,131 @@
++/////////////////////////////////////////////////////////////////////////////
++// Name:        wx/qt/webview_android.h
++// Purpose:     wxWebView backend on top of android.webkit.WebView (wxQt on Android)
++// Licence:     wxWindows licence
++//
++// The native WebView is a child view of the activity that is kept positioned over
++// this window by a small Java bridge (org.orcaport.wx.WebViewBridge, shipped as
++// src/qt/android/java/ and added to the application's Android package sources).
++/////////////////////////////////////////////////////////////////////////////
++
++#ifndef _WX_QT_WEBVIEW_ANDROID_H_
++#define _WX_QT_WEBVIEW_ANDROID_H_
++
++#include "wx/defs.h"
++
++#if wxUSE_WEBVIEW && defined(__WXQT__) && defined(__ANDROID__)
++
++#include "wx/control.h"
++#include "wx/webview.h"
++#include "wx/timer.h"
++#include "wx/sharedptr.h"
++#include <map>
++#include <memory>
++
++extern WXDLLIMPEXP_DATA_WEBVIEW(const char) wxWebViewBackendAndroid[];
++
++class wxWebViewAndroidImpl;
++
++class WXDLLIMPEXP_WEBVIEW wxWebViewAndroid : public wxWebView
++{
++public:
++    wxWebViewAndroid();
++    virtual ~wxWebViewAndroid();
++
++    virtual bool Create(wxWindow* parent, wxWindowID id,
++                        const wxString& url = wxASCII_STR(wxWebViewDefaultURLStr),
++                        const wxPoint& pos = wxDefaultPosition,
++                        const wxSize& size = wxDefaultSize,
++                        long style = 0,
++                        const wxString& name = wxASCII_STR(wxWebViewNameStr)) override;
++
++    virtual void LoadURL(const wxString& url) override;
++    virtual wxString GetCurrentURL() const override;
++    virtual wxString GetCurrentTitle() const override;
++    virtual bool IsBusy() const override;
++    virtual bool IsEditable() const override { return false; }
++    virtual void SetEditable(bool) override {}
++    virtual void Print() override {}
++    virtual void RegisterHandler(wxSharedPtr<wxWebViewHandler> handler) override;
++    virtual void Reload(wxWebViewReloadFlags flags = wxWEBVIEW_RELOAD_DEFAULT) override;
++    virtual void Stop() override;
++    virtual bool SetUserAgent(const wxString& userAgent) override;
++    virtual wxString GetUserAgent() const override;
++    virtual void EnableContextMenu(bool enable = true) override;
++    virtual void EnableAccessToDevTools(bool enable = true) override;
++    virtual bool IsAccessToDevToolsEnabled() const override { return m_devTools; }
++    virtual bool ClearBrowsingData(int types = wxWEBVIEW_BROWSING_DATA_ALL, wxDateTime since = {}) override;
++
++    virtual void RunScriptAsync(const wxString& javascript, void* clientData = nullptr) const override;
++    virtual bool AddScriptMessageHandler(const wxString& name) override;
++    virtual bool RemoveScriptMessageHandler(const wxString& name) override;
++    virtual bool AddUserScript(const wxString& javascript,
++                               wxWebViewUserScriptInjectionTime injectionTime = wxWEBVIEW_INJECT_AT_DOCUMENT_START) override;
++    virtual void RemoveAllUserScripts() override;
++
++    virtual bool CanGoBack() const override;
++    virtual bool CanGoForward() const override;
++    virtual void GoBack() override;
++    virtual void GoForward() override;
++    virtual void ClearHistory() override;
++    virtual void EnableHistory(bool enable = true) override { m_historyEnabled = enable; }
++    virtual wxVector<wxSharedPtr<wxWebViewHistoryItem> > GetBackwardHistory() override;
++    virtual wxVector<wxSharedPtr<wxWebViewHistoryItem> > GetForwardHistory() override;
++    virtual void LoadHistoryItem(wxSharedPtr<wxWebViewHistoryItem> item) override;
++
++    virtual bool CanSetZoomType(wxWebViewZoomType type) const override { return type == wxWEBVIEW_ZOOM_TYPE_TEXT; }
++    virtual float GetZoomFactor() const override { return m_zoom; }
++    virtual wxWebViewZoomType GetZoomType() const override { return wxWEBVIEW_ZOOM_TYPE_TEXT; }
++    virtual void SetZoomFactor(float zoom) override;
++    virtual void SetZoomType(wxWebViewZoomType) override {}
++
++    virtual bool CanUndo() const override { return false; }
++    virtual bool CanRedo() const override { return false; }
++    virtual void Undo() override {}
++    virtual void Redo() override {}
++
++    virtual void* GetNativeBackend() const override;
++
++    virtual bool Show(bool show = true) override;
++    virtual bool Enable(bool enable = true) override;
++    virtual void SetFocus() override;
++
++protected:
++    virtual void DoSetPage(const wxString& html, const wxString& baseUrl) override;
++    virtual void DoSetSize(int x, int y, int width, int height, int sizeFlags) override;
++
++private:
++    friend class wxWebViewAndroidImpl;
++    void OnGeometryTimer(wxTimerEvent& evt);
++    void UpdateNativeBounds(bool force);
++
++    wxWebViewAndroidImpl* m_impl = nullptr;
++    wxTimer m_geometryTimer;
++    wxString m_userAgent;
++    float m_zoom = 1.f;
++    bool m_devTools = false;
++    bool m_historyEnabled = true;
++};
++
++class WXDLLIMPEXP_WEBVIEW wxWebViewFactoryAndroid : public wxWebViewFactory
++{
++public:
++    virtual wxWebView* Create() override { return new wxWebViewAndroid; }
++    virtual wxWebView* Create(wxWindow* parent, wxWindowID id,
++                              const wxString& url = wxASCII_STR(wxWebViewDefaultURLStr),
++                              const wxPoint& pos = wxDefaultPosition,
++                              const wxSize& size = wxDefaultSize,
++                              long style = 0,
++                              const wxString& name = wxASCII_STR(wxWebViewNameStr)) override
++    {
++        std::unique_ptr<wxWebView> webView(new wxWebViewAndroid);
++        if (webView->Create(parent, id, url, pos, size, style, name))
++            return webView.release();
++        return nullptr;
++    }
++    virtual wxWebViewConfiguration CreateConfiguration() override;
++};
++
++#endif // wxUSE_WEBVIEW && __WXQT__ && __ANDROID__
++
++#endif // _WX_QT_WEBVIEW_ANDROID_H_
+diff --git a/include/wx/qt/webviewhistoryitem_android.h b/include/wx/qt/webviewhistoryitem_android.h
+new file mode 100644
+index 0000000..0831375
+--- /dev/null
++++ b/include/wx/qt/webviewhistoryitem_android.h
+@@ -0,0 +1,28 @@
++/////////////////////////////////////////////////////////////////////////////
++// Name:        wx/qt/webviewhistoryitem_android.h
++// Purpose:     wxWebViewHistoryItem for the Android backend (wxQt)
++// Licence:     wxWindows licence
++/////////////////////////////////////////////////////////////////////////////
++
++#ifndef _WX_QT_WEBVIEWHISTORYITEM_ANDROID_H_
++#define _WX_QT_WEBVIEWHISTORYITEM_ANDROID_H_
++
++#include "wx/setup.h"
++
++#if wxUSE_WEBVIEW && defined(__WXQT__) && defined(__ANDROID__)
++
++class WXDLLIMPEXP_WEBVIEW wxWebViewHistoryItem
++{
++public:
++    wxWebViewHistoryItem(const wxString& url, const wxString& title) :
++                     m_url(url), m_title(title) {}
++    wxString GetUrl() { return m_url; }
++    wxString GetTitle() { return m_title; }
++
++private:
++    wxString m_url, m_title;
++};
++
++#endif // wxUSE_WEBVIEW && __WXQT__ && __ANDROID__
++
++#endif // _WX_QT_WEBVIEWHISTORYITEM_ANDROID_H_
+diff --git a/include/wx/webview.h b/include/wx/webview.h
+index 489131d..d8a20c5 100644
+--- a/include/wx/webview.h
++++ b/include/wx/webview.h
+@@ -26,6 +26,8 @@
+     #include "wx/gtk/webviewhistoryitem_webkit.h"
+ #elif defined(__WXMSW__)
+     #include "wx/msw/webviewhistoryitem_ie.h"
++#elif defined(__WXQT__) && defined(__ANDROID__)
++    #include "wx/qt/webviewhistoryitem_android.h"
+ #else
+     #error "wxWebView not implemented on this platform."
+ #endif
+@@ -181,6 +183,7 @@ extern WXDLLIMPEXP_DATA_WEBVIEW(const char) wxWebViewBackendIE[];
+ extern WXDLLIMPEXP_DATA_WEBVIEW(const char) wxWebViewBackendEdge[];
+ extern WXDLLIMPEXP_DATA_WEBVIEW(const char) wxWebViewBackendWebKit[];
+ extern WXDLLIMPEXP_DATA_WEBVIEW(const char) wxWebViewBackendChromium[];
++extern WXDLLIMPEXP_DATA_WEBVIEW(const char) wxWebViewBackendAndroid[];
+ 
+ class WXDLLIMPEXP_WEBVIEW wxWebViewFactory : public wxObject
+ {
+diff --git a/src/common/glcmn.cpp b/src/common/glcmn.cpp
+index 9b9f4e4..2699c7f 100644
+--- a/src/common/glcmn.cpp
++++ b/src/common/glcmn.cpp
+@@ -89,6 +89,10 @@ bool wxGLCanvasBase::SetColour(const wxString& colour)
+     if ( !col.IsOk() )
+         return false;
+ 
++#ifdef __ANDROID__
++    // GLES has no fixed-function colour state
++    return false;
++#else
+ #ifdef wxHAS_OPENGL_ES
+     wxGLAPI::glColor3f((GLfloat) (col.Red() / 256.), (GLfloat) (col.Green() / 256.),
+                 (GLfloat) (col.Blue() / 256.));
+@@ -113,6 +117,7 @@ bool wxGLCanvasBase::SetColour(const wxString& colour)
+     }
+ #endif
+     return true;
++#endif // __ANDROID__
+ }
+ 
+ wxGLCanvasBase::~wxGLCanvasBase()
+@@ -350,6 +355,7 @@ bool wxGLCanvasBase::ParseAttribList(const int *attribList,
+ // compatibility layer for OpenGL 3 and OpenGL ES
+ // ============================================================================
+ 
++#ifndef __ANDROID__ // the legacy immediate-mode helpers do not exist in GLES3
+ static wxGLAPI s_glAPI;
+ 
+ #if wxUSE_OPENGL_EMULATION
+@@ -574,5 +580,7 @@ void wxGLAPI::glEnd()
+ #endif
+ }
+ 
++#endif // !__ANDROID__
++
+ #endif // wxUSE_GLCANVAS
+ 
+diff --git a/src/common/webview.cpp b/src/common/webview.cpp
+index dea61ba..3792503 100644
+--- a/src/common/webview.cpp
++++ b/src/common/webview.cpp
+@@ -25,6 +25,8 @@
+ #elif defined(__WXMSW__)
+ #include "wx/msw/webview_ie.h"
+ #include "wx/msw/webview_edge.h"
++#elif defined(__WXQT__) && defined(__ANDROID__)
++#include "wx/qt/webview_android.h"
+ #endif
+ 
+ // DLL options compatibility check:
+@@ -40,6 +42,8 @@ extern WXDLLIMPEXP_DATA_WEBVIEW(const char) wxWebViewBackendChromium[] = "wxWebV
+ 
+ #ifdef __WXMSW__
+ extern WXDLLIMPEXP_DATA_WEBVIEW(const char) wxWebViewBackendDefault[] = "";
++#elif defined(__WXQT__) && defined(__ANDROID__)
++extern WXDLLIMPEXP_DATA_WEBVIEW(const char) wxWebViewBackendDefault[] = "wxWebViewAndroid";
+ #else
+ extern WXDLLIMPEXP_DATA_WEBVIEW(const char) wxWebViewBackendDefault[] = "wxWebViewWebKit";
+ #endif
+@@ -529,6 +533,10 @@ void wxWebView::InitFactoryMap()
+         (new wxWebViewFactoryEdge));
+ #endif
+ 
++#elif defined(__WXQT__) && defined(__ANDROID__)
++    if(m_factoryMap.find(wxWebViewBackendAndroid) == m_factoryMap.end())
++        RegisterFactory(wxWebViewBackendAndroid, wxSharedPtr<wxWebViewFactory>
++                                                        (new wxWebViewFactoryAndroid));
+ #elif wxUSE_WEBVIEW_WEBKIT || wxUSE_WEBVIEW_WEBKIT2
+     if(m_factoryMap.find(wxWebViewBackendWebKit) == m_factoryMap.end())
+         RegisterFactory(wxWebViewBackendWebKit, wxSharedPtr<wxWebViewFactory>
+diff --git a/src/generic/datavgen.cpp b/src/generic/datavgen.cpp
+index d5178ff..c626b9a 100644
+--- a/src/generic/datavgen.cpp
++++ b/src/generic/datavgen.cpp
+@@ -1565,11 +1565,41 @@ const wxString &varianttype, wxDataViewCellMode mode, int align ) :
+ {
+     SetMode(mode);
+     SetAlignment(align);
++#if wxUSE_MARKUP
++    m_markupText = nullptr;
++#endif // wxUSE_MARKUP
++}
++
++wxDataViewIconTextRenderer::~wxDataViewIconTextRenderer()
++{
++#if wxUSE_MARKUP
++    delete m_markupText;
++#endif // wxUSE_MARKUP
++}
++
++#if wxUSE_MARKUP
++void wxDataViewIconTextRenderer::EnableMarkup(bool enable)
++{
++    if ( enable )
++    {
++        if ( !m_markupText )
++            m_markupText = new wxItemMarkupText(wxString());
++    }
++    else
++    {
++        delete m_markupText;
++        m_markupText = nullptr;
++    }
+ }
++#endif // wxUSE_MARKUP
+ 
+ bool wxDataViewIconTextRenderer::SetValue( const wxVariant &value )
+ {
+     m_value << value;
++#if wxUSE_MARKUP
++    if ( m_markupText )
++        m_markupText->SetMarkup(m_value.GetText());
++#endif // wxUSE_MARKUP
+     return true;
+ }
+ 
+@@ -1598,7 +1628,19 @@ bool wxDataViewIconTextRenderer::Render(wxRect rect, wxDC *dc, int state)
+         xoffset = icon.GetLogicalWidth() + dvc->FromDIP(4);
+     }
+ 
+-    RenderText(m_value.GetText(), xoffset, rect, dc, state);
++#if wxUSE_MARKUP
++    if ( m_markupText )
++    {
++        int flags = 0;
++        if ( state & wxDATAVIEW_CELL_SELECTED )
++            flags |= wxCONTROL_SELECTED;
++        rect.x += xoffset;
++        rect.width -= xoffset;
++        m_markupText->Render(GetView(), *dc, rect, flags, GetEllipsizeMode());
++    }
++    else
++#endif // wxUSE_MARKUP
++        RenderText(m_value.GetText(), xoffset, rect, dc, state);
+ 
+     return true;
+ }
+@@ -1609,7 +1651,18 @@ wxSize wxDataViewIconTextRenderer::GetSize() const
+ 
+     if (!m_value.GetText().empty())
+     {
+-        wxSize size = GetTextExtent(m_value.GetText());
++        wxSize size;
++#if wxUSE_MARKUP
++        if ( m_markupText )
++        {
++            wxInfoDC dc(dvc);
++            if ( GetAttr().HasFont() )
++                dc.SetFont(GetAttr().GetEffectiveFont(dvc->GetFont()));
++            size = m_markupText->Measure(dc);
++        }
++        else
++#endif // wxUSE_MARKUP
++            size = GetTextExtent(m_value.GetText());
+ 
+         const wxBitmapBundle& bb = m_value.GetBitmapBundle();
+         if (bb.IsOk())
+diff --git a/src/qt/android/java/org/orcaport/wx/SecretStoreBridge.java b/src/qt/android/java/org/orcaport/wx/SecretStoreBridge.java
+new file mode 100644
+index 0000000..db339fa
+--- /dev/null
++++ b/src/qt/android/java/org/orcaport/wx/SecretStoreBridge.java
+@@ -0,0 +1,75 @@
++package org.orcaport.wx;
++
++import android.content.Context;
++import android.content.SharedPreferences;
++import android.security.keystore.KeyGenParameterSpec;
++import android.security.keystore.KeyProperties;
++import android.util.Base64;
++
++import java.nio.charset.StandardCharsets;
++import java.security.KeyStore;
++
++import javax.crypto.Cipher;
++import javax.crypto.KeyGenerator;
++import javax.crypto.SecretKey;
++import javax.crypto.spec.GCMParameterSpec;
++
++/**
++ * Backs wxSecretStore on Android: values are AES-GCM encrypted with a key that lives in the
++ * Android Keystore and the ciphertext is kept in app-private SharedPreferences.
++ */
++public final class SecretStoreBridge {
++    private static final String KEY_ALIAS = "orca_wx_secret_key";
++    private static final String PREFS = "orca_wx_secrets";
++
++    private static SecretKey key() throws Exception {
++        KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
++        ks.load(null);
++        if (ks.containsAlias(KEY_ALIAS))
++            return (SecretKey) ks.getKey(KEY_ALIAS, null);
++        KeyGenerator kg = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
++        kg.init(new KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
++                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
++                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
++                .setKeySize(256)
++                .build());
++        return kg.generateKey();
++    }
++
++    private static SharedPreferences prefs(Context c) {
++        return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
++    }
++
++    /** @param valueB64 the secret, base64 encoded (arbitrary bytes) */
++    public static boolean save(Context c, String service, String user, String valueB64) {
++        try {
++            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
++            cipher.init(Cipher.ENCRYPT_MODE, key());
++            byte[] ct = cipher.doFinal(valueB64.getBytes(StandardCharsets.UTF_8));
++            String blob = Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP) + ":" + Base64.encodeToString(ct, Base64.NO_WRAP);
++            return prefs(c).edit().putString(service + "/user", user).putString(service + "/blob", blob).commit();
++        } catch (Exception e) {
++            return false;
++        }
++    }
++
++    /** @return "user\nvalueB64" or null when nothing is stored (or it cannot be decrypted) */
++    public static String load(Context c, String service) {
++        try {
++            SharedPreferences p = prefs(c);
++            String blob = p.getString(service + "/blob", null);
++            if (blob == null) return null;
++            String[] parts = blob.split(":");
++            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
++            cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)));
++            String value = new String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), StandardCharsets.UTF_8);
++            return p.getString(service + "/user", "") + "\n" + value;
++        } catch (Exception e) {
++            return null;
++        }
++    }
++
++    public static boolean delete(Context c, String service) {
++        return prefs(c).edit().remove(service + "/user").remove(service + "/blob").commit();
++    }
++}
+diff --git a/src/qt/android/java/org/orcaport/wx/WebViewBridge.java b/src/qt/android/java/org/orcaport/wx/WebViewBridge.java
+new file mode 100644
+index 0000000..54c7770
+--- /dev/null
++++ b/src/qt/android/java/org/orcaport/wx/WebViewBridge.java
+@@ -0,0 +1,287 @@
++package org.orcaport.wx;
++
++import android.app.Activity;
++import android.graphics.Bitmap;
++import android.os.Message;
++import android.view.Gravity;
++import android.view.KeyEvent;
++import android.view.View;
++import android.view.ViewGroup;
++import android.webkit.CookieManager;
++import android.webkit.JavascriptInterface;
++import android.webkit.WebChromeClient;
++import android.webkit.WebResourceError;
++import android.webkit.WebResourceRequest;
++import android.webkit.WebSettings;
++import android.webkit.WebView;
++import android.webkit.WebViewClient;
++import android.widget.FrameLayout;
++
++import org.json.JSONTokener;
++
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.Map;
++
++/**
++ * Backs wxWebViewAndroid (wxQt on Android). One instance per wx control; the native
++ * android.webkit.WebView is added to the activity content view and positioned over the
++ * wx window by setBounds(). Events travel back through nativeEvent() on whatever thread
++ * Android delivers them (the C++ side re-posts them to the wx main thread).
++ */
++public final class WebViewBridge {
++    // Event types, keep in sync with src/qt/webview_android.cpp
++    static final int EV_NAVIGATING = 0, EV_NAVIGATED = 1, EV_LOADED = 2, EV_ERROR = 3,
++                     EV_TITLE = 4, EV_NEWWINDOW = 5, EV_MESSAGE = 6, EV_SCRIPT_RESULT = 7, EV_CREATED = 8, EV_BACK = 9;
++
++    private static native void nativeEvent(long id, int type, String a, String b, int i);
++
++    private final long id;
++    private final Activity activity;
++    private WebView web;
++    private FrameLayout root;
++    private final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(1, 1, Gravity.TOP | Gravity.START);
++    private final ArrayList<String> userScripts = new ArrayList<>();
++    private final Map<String, Object> handlers = new HashMap<>();
++    private volatile String url = "", title = "", userAgent = "";
++    private volatile boolean busy, canBack, canForward, destroyed;
++    private boolean visible = true, devTools;
++
++    public static WebViewBridge create(Activity activity, long id) {
++        final WebViewBridge b = new WebViewBridge(activity, id);
++        activity.runOnUiThread(new Runnable() { public void run() { b.init(); } });
++        return b;
++    }
++
++    private WebViewBridge(Activity activity, long id) {
++        this.activity = activity;
++        this.id = id;
++    }
++
++    private void init() {
++        if (destroyed) return;
++        web = new WebView(activity);
++        WebSettings s = web.getSettings();
++        s.setJavaScriptEnabled(true);
++        s.setDomStorageEnabled(true);
++        s.setAllowFileAccess(true);
++        s.setAllowFileAccessFromFileURLs(true);
++        s.setAllowUniversalAccessFromFileURLs(true);
++        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
++        s.setSupportMultipleWindows(true);
++        s.setMediaPlaybackRequiresUserGesture(false);
++        s.setSupportZoom(false);
++        userAgent = s.getUserAgentString();
++        web.setWebViewClient(new Client());
++        web.setWebChromeClient(new Chrome());
++        web.setBackgroundColor(0xFFFFFFFF);
++        // With the page focused, the system Back key reaches this view and never the Qt window: hand it to the
++        // native side, which dismisses the dialog the view lives in.
++        web.setOnKeyListener(new View.OnKeyListener() {
++            @Override public boolean onKey(View v, int keyCode, KeyEvent event) {
++                if (keyCode != KeyEvent.KEYCODE_BACK)
++                    return false;
++                if (event.getAction() == KeyEvent.ACTION_UP)
++                    nativeEvent(id, EV_BACK, "", "", 0);
++                return true;
++            }
++        });
++        // Like every wxWebView backend, expose window.wx.postMessage() from the start; it raises
++        // wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED with the handler name "wx" (Orca's pages rely on it).
++        addMessageHandlerNow("wx");
++        root = (FrameLayout) activity.getWindow().getDecorView().findViewById(android.R.id.content);
++        root.addView(web, lp);
++        web.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
++        nativeEvent(id, EV_CREATED, "", "", 0);
++    }
++
++    // ---- called from the native side (any thread) ----
++
++    public void setBounds(final int x, final int y, final int w, final int h) {
++        activity.runOnUiThread(new Runnable() { public void run() {
++            lp.leftMargin = x; lp.topMargin = y; lp.width = Math.max(w, 1); lp.height = Math.max(h, 1);
++            if (web != null) web.setLayoutParams(lp);
++        }});
++    }
++
++    public void setVisible(final boolean v) {
++        activity.runOnUiThread(new Runnable() { public void run() {
++            visible = v;
++            if (web != null) web.setVisibility(v ? View.VISIBLE : View.INVISIBLE);
++        }});
++    }
++
++    public void requestFocusNative() {
++        activity.runOnUiThread(new Runnable() { public void run() { if (web != null) web.requestFocus(); }});
++    }
++
++    public void loadUrl(final String u) {
++        activity.runOnUiThread(new Runnable() { public void run() { if (web != null) web.loadUrl(u); }});
++    }
++
++    public void loadHtml(final String html, final String base) {
++        activity.runOnUiThread(new Runnable() { public void run() {
++            if (web != null) web.loadDataWithBaseURL(base.isEmpty() ? null : base, html, "text/html", "UTF-8", null);
++        }});
++    }
++
++    public void reload(final boolean noCache) {
++        activity.runOnUiThread(new Runnable() { public void run() {
++            if (web == null) return;
++            if (noCache) web.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
++            web.reload();
++            if (noCache) web.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
++        }});
++    }
++
++    public void stop() { activity.runOnUiThread(new Runnable() { public void run() { if (web != null) web.stopLoading(); }}); }
++    public void goBack() { activity.runOnUiThread(new Runnable() { public void run() { if (web != null && web.canGoBack()) web.goBack(); }}); }
++    public void goForward() { activity.runOnUiThread(new Runnable() { public void run() { if (web != null && web.canGoForward()) web.goForward(); }}); }
++    public void clearHistory() { activity.runOnUiThread(new Runnable() { public void run() { if (web != null) web.clearHistory(); }}); }
++
++    public void setZoom(final float f) {
++        activity.runOnUiThread(new Runnable() { public void run() {
++            if (web != null) web.getSettings().setTextZoom(Math.round(f * 100.f));
++        }});
++    }
++
++    public void setUserAgent(final String ua) {
++        userAgent = ua;
++        activity.runOnUiThread(new Runnable() { public void run() { if (web != null) web.getSettings().setUserAgentString(ua); }});
++    }
++
++    public void setDevTools(final boolean on) {
++        devTools = on;
++        activity.runOnUiThread(new Runnable() { public void run() { WebView.setWebContentsDebuggingEnabled(on); }});
++    }
++
++    public void clearBrowsingData() {
++        activity.runOnUiThread(new Runnable() { public void run() {
++            if (web != null) { web.clearCache(true); web.clearFormData(); }
++            CookieManager.getInstance().removeAllCookies(null);
++        }});
++    }
++
++    public void runScript(final String js, final long requestId) {
++        activity.runOnUiThread(new Runnable() { public void run() {
++            if (web == null) { nativeEvent(id, EV_SCRIPT_RESULT, Long.toString(requestId), "", 0); return; }
++            web.evaluateJavascript(js, new android.webkit.ValueCallback<String>() {
++                public void onReceiveValue(String v) {
++                    nativeEvent(id, EV_SCRIPT_RESULT, Long.toString(requestId), decodeJsResult(v), 1);
++                }
++            });
++        }});
++    }
++
++    public void addUserScript(String js) { synchronized (userScripts) { userScripts.add(js); } }
++    public void removeAllUserScripts() { synchronized (userScripts) { userScripts.clear(); } }
++
++    private void addMessageHandlerNow(final String name) {
++        if (web == null || handlers.containsKey(name)) return;
++        Object o = new Object() {
++            @JavascriptInterface public void postMessage(String m) { nativeEvent(id, EV_MESSAGE, name, m, 0); }
++        };
++        handlers.put(name, o);
++        web.addJavascriptInterface(o, name);
++    }
++
++    public void addMessageHandler(final String name) {
++        activity.runOnUiThread(new Runnable() { public void run() { addMessageHandlerNow(name); } });
++    }
++
++    public void removeMessageHandler(final String name) {
++        activity.runOnUiThread(new Runnable() { public void run() {
++            if (web != null && handlers.remove(name) != null) web.removeJavascriptInterface(name);
++        }});
++    }
++
++    public String getUrl() { return url; }
++    public String getTitle() { return title; }
++    public String getUserAgent() { return userAgent; }
++    public boolean isBusy() { return busy; }
++    public boolean canGoBack() { return canBack; }
++    public boolean canGoForward() { return canForward; }
++
++    public void destroy() {
++        destroyed = true;
++        activity.runOnUiThread(new Runnable() { public void run() {
++            if (web != null) {
++                if (root != null) root.removeView(web);
++                web.stopLoading();
++                web.destroy();
++                web = null;
++            }
++        }});
++    }
++
++    // ---- WebView callbacks ----
++
++    private static String decodeJsResult(String v) {
++        if (v == null || v.equals("null")) return "";
++        try {
++            Object o = new JSONTokener(v).nextValue();
++            return o == null ? "" : o.toString();
++        } catch (Exception e) {
++            return v;
++        }
++    }
++
++    private void runUserScripts() {
++        ArrayList<String> copy;
++        synchronized (userScripts) { copy = new ArrayList<>(userScripts); }
++        for (String s : copy) web.evaluateJavascript(s, null);
++    }
++
++    private void updateHistory() {
++        if (web == null) return;
++        canBack = web.canGoBack();
++        canForward = web.canGoForward();
++    }
++
++    private final class Client extends WebViewClient {
++        @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
++            nativeEvent(id, EV_NAVIGATING, r.getUrl().toString(), r.isForMainFrame() ? "" : "frame", r.hasGesture() ? 1 : 0);
++            return false;
++        }
++        @Override public void onPageStarted(WebView v, String u, Bitmap icon) {
++            busy = true;
++            url = u;
++            runUserScripts();
++            updateHistory();
++            nativeEvent(id, EV_NAVIGATED, u, "", 0);
++        }
++        @Override public void onPageFinished(WebView v, String u) {
++            busy = false;
++            url = u;
++            updateHistory();
++            nativeEvent(id, EV_LOADED, u, "", 0);
++        }
++        @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
++            if (!r.isForMainFrame()) return;
++            nativeEvent(id, EV_ERROR, r.getUrl().toString(), String.valueOf(e.getDescription()), e.getErrorCode());
++        }
++    }
++
++    private final class Chrome extends WebChromeClient {
++        @Override public void onReceivedTitle(WebView v, String t) {
++            title = t == null ? "" : t;
++            nativeEvent(id, EV_TITLE, title, "", 0);
++        }
++        @Override public boolean onCreateWindow(WebView v, boolean dialog, boolean userGesture, Message resultMsg) {
++            WebView tmp = new WebView(activity);
++            tmp.setWebViewClient(new WebViewClient() {
++                @Override public boolean shouldOverrideUrlLoading(WebView w, WebResourceRequest r) {
++                    nativeEvent(id, EV_NEWWINDOW, r.getUrl().toString(), "", 0);
++                    return true;
++                }
++                @Override public void onPageStarted(WebView w, String u, Bitmap b) {
++                    nativeEvent(id, EV_NEWWINDOW, u, "", 0);
++                    w.stopLoading();
++                }
++            });
++            ((WebView.WebViewTransport) resultMsg.obj).setWebView(tmp);
++            resultMsg.sendToTarget();
++            return true;
++        }
++    }
++}
+diff --git a/src/qt/app.cpp b/src/qt/app.cpp
+index 9521282..1f282de 100644
+--- a/src/qt/app.cpp
++++ b/src/qt/app.cpp
+@@ -14,7 +14,54 @@
+ #include "wx/qt/private/utils.h"
+ #include "wx/qt/private/converter.h"
+ #include <QtCore/QStringList>
++#include <QtCore/QCoreApplication>
+ #include <QtWidgets/QApplication>
++#include <QtWidgets/QWidget>
++#include <QtGui/QMouseEvent>
++#include <QtGui/QTouchEvent>
++#include <QtGui/QWindow>
++
++#ifdef __ANDROID__
++// Qt's Android plugin (6.8) maps pointer events for every top-level window except the one at the origin
++// (menus, combo/dropdown popups, dialogs) to a position that is off by the window's position divided by
++// the device pixel ratio. The main window sits at (0, 0), so only secondary windows are affected. Undo the
++// offset on the window-level mouse events, before Qt dispatches them to the widgets inside.
++class wxQtAndroidSecondaryWindowInputFix : public QObject
++{
++protected:
++    bool eventFilter(QObject* obj, QEvent* event) override
++    {
++        switch ( event->type() )
++        {
++            case QEvent::MouseButtonPress:
++            case QEvent::MouseButtonRelease:
++            case QEvent::MouseButtonDblClick:
++            case QEvent::MouseMove:
++                break;
++            default:
++                return false;
++        }
++
++        QWindow* const window = qobject_cast<QWindow*>(obj);
++        if ( !window || m_resending || window->position().isNull() )
++            return false;
++
++        auto* const me = static_cast<QMouseEvent*>(event);
++        const QPointF delta = QPointF(window->position()) / window->devicePixelRatio();
++        QMouseEvent fixed(me->type(), me->position() - delta, me->scenePosition() - delta, me->globalPosition() - delta,
++                          me->button(), me->buttons(), me->modifiers(), me->source(), me->pointingDevice());
++        fixed.setTimestamp(me->timestamp());
++
++        m_resending = true;
++        QCoreApplication::sendEvent(window, &fixed);
++        m_resending = false;
++        return true;
++    }
++
++private:
++    bool m_resending = false;
++};
++#endif // __ANDROID__
+ #include <QSurfaceFormat>
+ 
+ #include <algorithm>
+@@ -38,9 +85,17 @@ bool wxApp::Initialize( int& argc_, wxChar** argv_ )
+ 
+     wxConvCurrent = &wxConvUTF8;
+ 
+-    // Use SingleBuffer mode by default to reduce latency.
+     QSurfaceFormat format;
++#ifdef __ANDROID__
++    // OpenGL ES 3.0 is the baseline every Android 9+ GPU/emulator provides (shaders are "#version 300 es").
++    format.setRenderableType(QSurfaceFormat::OpenGLES);
++    format.setVersion(3, 0);
++    format.setDepthBufferSize(24);
++    format.setStencilBufferSize(8);
++#else
++    // Use SingleBuffer mode by default to reduce latency.
+     format.setSwapBehavior(QSurfaceFormat::SwapBehavior::SingleBuffer);
++#endif
+     QSurfaceFormat::setDefaultFormat(format);
+ 
+     const int argcA = argc_;
+@@ -62,7 +117,19 @@ bool wxApp::Initialize( int& argc_, wxChar** argv_ )
+     // of the QApplication object. In addition, argc must be greater than zero and argv must
+     // contain at least one valid character string.
+ 
++    // Orca (like any wx app with several wxGLCanvas) creates GL resources once, in one canvas's context, and
++    // uses them from the others: have Qt share the contexts of all QOpenGLWidgets.
++    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
++#ifdef __ANDROID__
++    // Touch screens deliver moves at 120+ Hz; merge the ones queued while a (slow) handler runs, as Qt does
++    // on X11, instead of replaying every one of them later.
++    QCoreApplication::setAttribute(Qt::AA_CompressHighFrequencyEvents);
++#endif
++
+     m_qtApplication.reset(new QApplication(argc_, argvA));
++#ifdef __ANDROID__
++    m_qtApplication->installEventFilter(new wxQtAndroidSecondaryWindowInputFix);
++#endif
+ 
+     if ( m_qtApplication->platformName() == "xcb" )
+         m_qtApplication->processEvents(); // Avoids SIGPIPE on X11 when debugging
+diff --git a/src/qt/bitmap.cpp b/src/qt/bitmap.cpp
+index 03bc721..116a939 100644
+--- a/src/qt/bitmap.cpp
++++ b/src/qt/bitmap.cpp
+@@ -149,7 +149,14 @@ public:
+         if (depth == 1)
+             m_qtPixmap = QBitmap( width, height );
+         else
+-            m_qtPixmap = QPixmap( width, height );
++        {
++            // QPixmap(w, h) has no alpha channel on some platforms (Android) and undefined contents. wx code
++            // (and Orca's custom-drawn controls, which only ask for depth 32 under GTK3) assume a fresh bitmap
++            // is cleared and can hold transparency, so always allocate an alpha-capable, transparent one.
++            QImage img( width, height, QImage::Format_ARGB32_Premultiplied );
++            img.fill( Qt::transparent );
++            m_qtPixmap = QPixmap::fromImage( img );
++        }
+     }
+ 
+     wxBitmapRefData( QPixmap pix, wxMask* mask = nullptr )
+diff --git a/src/qt/converter.cpp b/src/qt/converter.cpp
+index 2497167..ec42c98 100644
+--- a/src/qt/converter.cpp
++++ b/src/qt/converter.cpp
+@@ -168,6 +168,11 @@ wxKeyCode wxQtConvertKeyCode( int key, Qt::KeyboardModifiers modifiers )
+             return WXK_RETURN;
+         case Qt::Key_Escape:
+             return WXK_ESCAPE;
++#ifdef __ANDROID__
++        // the system Back button/gesture: dismisses dialogs and popups like Escape does on the desktop
++        case Qt::Key_Back:
++            return WXK_ESCAPE;
++#endif
+         case Qt::Key_Cancel:
+             return WXK_CANCEL;
+         case Qt::Key_Clear:
+diff --git a/src/qt/dc.cpp b/src/qt/dc.cpp
+index 9ffcb2d..caed82d 100644
+--- a/src/qt/dc.cpp
++++ b/src/qt/dc.cpp
+@@ -13,6 +13,7 @@
+ #include <QtGui/QPen>
+ #include <QtGui/QPainter>
+ #include <QtGui/QPainterPath>
++#include <QtGui/QPaintEngine>
+ 
+ #ifndef WX_PRECOMP
+     #include "wx/icon.h"
+@@ -295,7 +296,9 @@ void wxQtDCImpl::SetPalette(const wxPalette& WXUNUSED(palette))
+ wxPoint wxQtDCImpl::DeviceToLogical(wxCoord x, wxCoord y) const
+ {
+     QPointF devicePoint(x, y);
+-    const auto invTrans  = m_qtPainter->combinedTransform().inverted();
++    // worldTransform(), not combinedTransform(): the latter includes the high-DPI device scaling, but wx
++    // device coordinates (e.g. DoGetSize()) are in the widget's logical pixels.
++    const auto invTrans  = m_qtPainter->worldTransform().inverted();
+     QPointF logicalPoint = invTrans.map(devicePoint);
+     return wxPoint(wxRound(logicalPoint.x()), wxRound(logicalPoint.y()));
+ }
+@@ -303,7 +306,7 @@ wxPoint wxQtDCImpl::DeviceToLogical(wxCoord x, wxCoord y) const
+ wxPoint wxQtDCImpl::LogicalToDevice(wxCoord x, wxCoord y) const
+ {
+     QPointF logicalPoint(x, y);
+-    QPointF devicePoint = m_qtPainter->combinedTransform().map(logicalPoint);
++    QPointF devicePoint = m_qtPainter->worldTransform().map(logicalPoint);
+     return wxPoint(wxRound(devicePoint.x()), wxRound(devicePoint.y()));
+ }
+ 
+diff --git a/src/qt/dcclient.cpp b/src/qt/dcclient.cpp
+index 675d127..caca55a 100644
+--- a/src/qt/dcclient.cpp
++++ b/src/qt/dcclient.cpp
+@@ -40,6 +40,11 @@ wxWindowDCImpl::wxWindowDCImpl( wxDC *owner, wxWindow *win )
+ {
+     m_window = win;
+     m_qtPainter = m_window->QtGetPainter(); // guaranteed to be non-null
++    // Like the other ports, start with the window's font and colours: text measured through a wxClientDC
++    // (e.g. to size a control) must use the same font the control later paints with.
++    m_font = win->GetFont();
++    m_textForegroundColour = win->GetForegroundColour();
++    m_textBackgroundColour = win->GetBackgroundColour();
+ 
+     if ( m_qtPainter->isActive() )
+     {
+@@ -52,6 +57,9 @@ wxWindowDCImpl::wxWindowDCImpl( wxDC *owner, wxWindow *win )
+         m_ok = m_qtPainter->begin( m_pict.get() );
+         QtPreparePainter();
+     }
++
++    if ( m_qtPainter->isActive() && m_font.IsOk() )
++        m_qtPainter->setFont( m_font.GetHandle() );
+ }
+ 
+ wxWindowDCImpl::~wxWindowDCImpl()
+diff --git a/src/qt/dialog.cpp b/src/qt/dialog.cpp
+index 35fba8a..c2c1926 100644
+--- a/src/qt/dialog.cpp
++++ b/src/qt/dialog.cpp
+@@ -82,7 +82,10 @@ int wxDialog::ShowModal()
+     QDialog *qDialog = GetDialogHandle();
+     qDialog->setModal(true);
+ 
+-    Show(true);
++    // exec() shows the dialog; a QFileDialog backed by a native picker (Android, some desktops) would
++    // otherwise be opened twice, once for show() and once for exec().
++    if ( !qDialog->inherits("QFileDialog") )
++        Show(true);
+ 
+     bool ret = qDialog->exec();
+     if ( GetReturnCode() == 0 )
+diff --git a/src/qt/filedlg.cpp b/src/qt/filedlg.cpp
+index 22d141b..193b308 100644
+--- a/src/qt/filedlg.cpp
++++ b/src/qt/filedlg.cpp
+@@ -19,6 +19,17 @@
+ #include "wx/dirdlg.h"
+ 
+ #include <QtWidgets/QFileDialog>
++#ifdef __ANDROID__
++#include <QtCore/QDir>
++#include <QtCore/QFile>
++#include <QtCore/QFileInfo>
++#include <QtCore/QStandardPaths>
++#include <QtCore/QDateTime>
++#include <QtCore/QFileSystemWatcher>
++#include <QtCore/QHash>
++#include <QtCore/QTimer>
++#include "wx/log.h"
++#endif
+ 
+ class wxQtFileDialog : public wxQtEventSignalHandler< QFileDialog, wxDialog >
+ {
+@@ -32,7 +43,14 @@ public:
+         setDirectory(wxQtConvertString(defaultDir));
+         selectFile(wxQtConvertString(defaultFile));
+ 
++#ifdef __ANDROID__
++        // The Android picker turns name filters into MIME types, and model files (STL, 3MF, STEP...) mostly
++        // have none registered, so they would be greyed out. Let the user pick any file instead.
++        if (style & wxFD_SAVE)
++            SetWildcard(wildCard);
++#else
+         SetWildcard(wildCard);
++#endif
+ 
+         if (style & wxFD_FILE_MUST_EXIST)
+             setFileMode(ExistingFile);
+@@ -116,11 +134,128 @@ wxString wxFileDialog::GetPath() const
+     return paths[0];
+ }
+ 
++#ifdef __ANDROID__
++// The Android picker returns content:// URIs, which only Qt's file engine can read. Copy the document into the
++// app cache and hand out that path, so the program can open it with ordinary file APIs.
++static QString wxQtLocalCopyOfContentUri(const QString& file)
++{
++    if (!file.startsWith("content:"))
++        return file;
++
++    QString name = QFileInfo(file).fileName();
++    if (name.isEmpty() || name.contains('/'))
++        name = QString::number(qHash(file), 16);
++    const QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/opened";
++    QDir().mkpath(dir);
++    const QString local = dir + "/" + name;
++
++    QFile src(file);
++    if (!src.open(QIODevice::ReadOnly))
++        return file;
++    QFile dst(local);
++    if (!dst.open(QIODevice::WriteOnly | QIODevice::Truncate))
++        return file;
++    while (!src.atEnd())
++        dst.write(src.read(1 << 20));
++    return local;
++}
++
++// Saving: the picker creates the document and returns its content:// URI. Hand the program a local file
++// instead, and copy that file into the document whenever the program has finished writing it (no change
++// for a moment). The watch lasts for the rest of the session, so saving to the same path again works too.
++class wxQtContentUriExport : public QObject
++{
++public:
++    wxQtContentUriExport(const QString& local, const QString& uri) : m_local(local), m_uri(uri)
++    {
++        m_settle.setSingleShot(true);
++        m_settle.setInterval(1500);
++        connect(&m_settle, &QTimer::timeout, this, &wxQtContentUriExport::CopyBack);
++        m_watcher.addPath(QFileInfo(local).absolutePath());
++        connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this] { Touched(); });
++        connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, [this] { Touched(); });
++    }
++
++private:
++    void Touched()
++    {
++        if (QFileInfo::exists(m_local) && !m_watcher.files().contains(m_local))
++            m_watcher.addPath(m_local);
++        m_settle.start();
++    }
++
++    void CopyBack()
++    {
++        const QFileInfo info(m_local);
++        if (!info.exists() || info.lastModified() == m_copied)
++            return;
++        QFile src(m_local);
++        QFile dst(m_uri);
++        if (!src.open(QIODevice::ReadOnly) || !dst.open(QIODevice::WriteOnly | QIODevice::Truncate))
++        {
++            wxLogWarning("Could not write %s to the chosen location", wxQtConvertString(info.fileName()));
++            return;
++        }
++        while (!src.atEnd())
++            dst.write(src.read(1 << 20));
++        m_copied = info.lastModified();
++    }
++
++    QString m_local, m_uri;
++    QFileSystemWatcher m_watcher;
++    QTimer m_settle;
++    QDateTime m_copied;
++};
++
++static QString wxQtLocalFileForContentUriSave(const QString& uri)
++{
++    if (!uri.startsWith("content:"))
++        return uri;
++
++    static QHash<QString, QString> s_exports; // uri -> local path, one watcher each
++    if (const auto it = s_exports.constFind(uri); it != s_exports.constEnd())
++        return it.value();
++
++    QString name = QFileInfo(uri).fileName();
++    if (name.isEmpty() || name.contains('/'))
++        name = QString::number(qHash(uri), 16);
++    const QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + "/export/"
++                        + QString::number(s_exports.size());
++    QDir().mkpath(dir);
++    const QString local = dir + "/" + name;
++    QFile::remove(local);
++
++    new wxQtContentUriExport(local, uri); // lives as long as the app
++    s_exports.insert(uri, local);
++    return local;
++}
++#endif // __ANDROID__
++
+ void wxFileDialog::GetPaths(wxArrayString& paths) const
+ {
+     QStringList selectedfiles = GetQFileDialog()->selectedFiles();
++#ifdef __ANDROID__
++    // The picker result can also carry the preselected (default) entry: keep real picks only, once each.
++    selectedfiles.removeDuplicates();
++#endif
+     foreach (QString file, selectedfiles)
++    {
++#ifdef __ANDROID__
++        if (!HasFlag(wxFD_SAVE))
++        {
++            if (!file.startsWith("content:") && !QFileInfo(file).isFile())
++                continue;
++            file = wxQtLocalCopyOfContentUri(file);
++        }
++        else
++        {
++            if (file.isEmpty())
++                continue;
++            file = wxQtLocalFileForContentUriSave(file);
++        }
++#endif
+         paths.Add(wxQtConvertString(file));
++    }
+ }
+ 
+ wxString wxFileDialog::GetFilename() const
+@@ -140,6 +275,10 @@ void wxFileDialog::GetFilenames(wxArrayString& files) const
+     QStringList selectedfiles = GetQFileDialog()->selectedFiles();
+     foreach (QString file, selectedfiles )
+     {
++#ifdef __ANDROID__
++        if (file.startsWith("content:"))
++            file = QFileInfo(file).fileName();
++#endif
+         wxFileName fn = wxQtConvertString(file);
+         files.Add(fn.GetFullName());
+     }
+diff --git a/src/qt/font.cpp b/src/qt/font.cpp
+index faa1467..fb1507c 100644
+--- a/src/qt/font.cpp
++++ b/src/qt/font.cpp
+@@ -11,6 +11,7 @@
+ 
+ #include <QtGui/QFont>
+ #include <QtGui/QFontInfo>
++#include <QtGui/QFontDatabase>
+ 
+ #include "wx/font.h"
+ #include "wx/fontutil.h"
+@@ -623,3 +624,12 @@ wxString wxNativeFontInfo::ToUserString() const
+ {
+     return ToString();
+ }
++
++
++#if wxUSE_PRIVATE_FONTS
++// static
++bool wxFontBase::AddPrivateFont(const wxString& filename)
++{
++    return QFontDatabase::addApplicationFont(wxQtConvertString(filename)) != -1;
++}
++#endif // wxUSE_PRIVATE_FONTS
+diff --git a/src/qt/glcanvas.cpp b/src/qt/glcanvas.cpp
+index b3cadb8..491a4b3 100644
+--- a/src/qt/glcanvas.cpp
++++ b/src/qt/glcanvas.cpp
+@@ -14,9 +14,16 @@
+ 
+ #include <QOpenGLContext>
+ #include <QOpenGLWidget>
++#include <QtCore/QCoreApplication>
+ #include <QSurfaceFormat>
+ #include <QtWidgets/QGestureRecognizer>
+ #include <QtWidgets/QGestureEvent>
++#include <QtGui/QTouchEvent>
++#include <QtGui/QMouseEvent>
++#include <QtCore/QTimer>
++#include <deque>
++#include <functional>
++#include <cmath>
+ 
+ wxGCC_WARNING_SUPPRESS(unused-parameter)
+ 
+@@ -28,16 +35,335 @@ public:
+     {
+         setFormat(format);
+         setFocusPolicy(Qt::StrongFocus);
++#ifdef __ANDROID__
++        setAttribute(Qt::WA_AcceptTouchEvents);
++        m_longPress.setSingleShot(true);
++        m_longPress.setInterval(500);
++        QObject::connect(&m_longPress, &QTimer::timeout, this, [this] { LongPress(); });
++        m_stepFallback.setSingleShot(true);
++        m_stepFallback.setInterval(250);
++        QObject::connect(&m_stepFallback, &QTimer::timeout, this, [this] { RunStep(); });
++#endif
++    }
++
++#ifdef __ANDROID__
++    // The program presented a frame (SwapBuffers()): run the next queued touch step.
++    void FrameDone()
++    {
++        if ( !m_steps.empty() )
++            QTimer::singleShot(0, this, [this] { RunStep(); });
++    }
++#endif
++
++    // A frame drawn outside paintGL() (wx programs render from mouse/idle handlers and then call SwapBuffers())
++    // only sits in the widget's framebuffer: ask Qt to composite it, without drawing it a second time.
++    void PresentFrameRenderedOutsidePaint()
++    {
++        if ( m_inPaint )
++            return;
++        m_skipNextPaint = true;
++        update();
+     }
+ 
+ protected:
++#ifdef __ANDROID__
++    virtual bool event( QEvent * event ) override
++    {
++        switch ( event->type() )
++        {
++            case QEvent::TouchBegin:
++            case QEvent::TouchUpdate:
++            case QEvent::TouchEnd:
++            case QEvent::TouchCancel:
++                HandleTouch(static_cast<QTouchEvent*>(event));
++                return true;
++            default:
++                return wxQtEventSignalHandler<QOpenGLWidget, wxGLCanvas>::event(event);
++        }
++    }
++#endif // __ANDROID__
++
+     virtual void resizeEvent ( QResizeEvent * event ) override;
+     virtual void paintEvent ( QPaintEvent * event ) override;
+ 
+     virtual void resizeGL(int w, int h) override;
+     virtual void paintGL() override;
++
++private:
++#ifdef __ANDROID__
++    // Touch screens: one finger drives the mouse (press/drag/release), two fingers make the gestures wx
++    // programs know from touchpads (pan = moving fingers, zoom = pinch, rotate = twist). A touch delivered
++    // here is not turned into mouse events by Qt, so both are generated from the touch points.
++    void HandleTouch(QTouchEvent* event);
++    void SendMouse(QEvent::Type type, const QPointF& pos, Qt::MouseButtons buttons);
++    void SendGestures(const QPointF& a, const QPointF& b, bool start, bool end);
++
++    void SendLeave();
++    void LongPress();
++
++    // A finger acts in steps one rendered frame apart (hover, press, release), like a mouse: 3D scenes and
++    // ImGui only see what is under the pointer, and register a click, once a frame has been drawn.
++    void QueueSteps(std::initializer_list<std::function<void()>> steps);
++    void RunStep();
++    std::deque<std::function<void()>> m_steps;
++    QTimer m_stepFallback; // a step that changed nothing on screen may not get a frame
++
++    // Mouse: dragging with the left button. Pending: finger down, not moved yet (tap, drag or long press).
++    // Arming: a drag waiting for the hover to be rendered, so it grabs what is under the finger.
++    enum class TouchMode { None, Pending, Arming, Mouse, Gesture, Done };
++    void StartDrag();
++    QPointF m_touchStart;
++    bool m_liftedWhileArming = false;
++    QTimer m_longPress;
++    TouchMode m_touchMode = TouchMode::None;
++    QPointF m_lastMousePos;
++    QPointF m_lastCentre;
++    QPointF m_lastA, m_lastB;
++    double m_startDistance = 1.0;
++    double m_startAngle = 0.0;
++    bool m_rotating = false;
++#endif // __ANDROID__
++
++    bool m_inPaint = false;
++    bool m_skipNextPaint = false;
+ };
+ 
++#ifdef __ANDROID__
++void wxQtGLWidget::SendMouse(QEvent::Type type, const QPointF& pos, Qt::MouseButtons buttons)
++{
++    const Qt::MouseButton button = type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton;
++    QMouseEvent me(type, pos, pos, mapToGlobal(pos), button, buttons, Qt::NoModifier);
++    GetHandler()->QtHandleMouseEvent(this, &me);
++    m_lastMousePos = pos;
++}
++
++void wxQtGLWidget::StartDrag()
++{
++    if ( m_touchMode != TouchMode::Arming )
++        return;
++    m_touchMode = TouchMode::Mouse;
++    const QPointF to = m_lastMousePos;
++    SendMouse(QEvent::MouseMove, m_touchStart, Qt::NoButton); // hover first: toolbars track the item under the pointer
++    SendMouse(QEvent::MouseButtonPress, m_touchStart, Qt::LeftButton);
++    SendMouse(QEvent::MouseMove, to, Qt::LeftButton);
++    if ( m_liftedWhileArming )
++    {
++        SendMouse(QEvent::MouseButtonRelease, to, Qt::NoButton);
++        SendLeave();
++        m_touchMode = TouchMode::None;
++    }
++}
++
++void wxQtGLWidget::SendLeave()
++{
++    // A finger does not hover: once it is lifted, the pointer has left the window (hover highlights and
++    // tooltips would otherwise stay up where the last touch was).
++    wxGLCanvas* const win = GetHandler();
++    wxMouseEvent leave(wxEVT_LEAVE_WINDOW);
++    leave.SetEventObject(win);
++    leave.SetId(win->GetId());
++    leave.SetPosition(wxPoint(-1, -1));
++    EmitEvent(leave);
++}
++
++void wxQtGLWidget::LongPress()
++{
++    // a finger held still: the right click that opens context menus on the desktop
++    if ( m_touchMode != TouchMode::Pending )
++        return;
++    m_touchMode = TouchMode::Done;
++    const QPointF pos = m_touchStart;
++    auto right = [this, pos](QEvent::Type type, Qt::MouseButtons buttons) {
++        QMouseEvent me(type, pos, pos, mapToGlobal(pos), Qt::RightButton, buttons, Qt::NoModifier);
++        GetHandler()->QtHandleMouseEvent(this, &me);
++    };
++    QueueSteps({ [this, pos] { SendMouse(QEvent::MouseMove, pos, Qt::NoButton); },
++                 [right] { right(QEvent::MouseButtonPress, Qt::RightButton); },
++                 [right] { right(QEvent::MouseButtonRelease, Qt::NoButton); } });
++}
++
++void wxQtGLWidget::QueueSteps(std::initializer_list<std::function<void()>> steps)
++{
++    const bool idle = m_steps.empty();
++    m_steps.insert(m_steps.end(), steps.begin(), steps.end());
++    if ( idle )
++    {
++        update(); // a frame for the hover sent before
++        m_stepFallback.start();
++    }
++}
++
++void wxQtGLWidget::RunStep()
++{
++    m_stepFallback.stop();
++    if ( m_steps.empty() )
++        return;
++    const std::function<void()> step = std::move(m_steps.front());
++    m_steps.pop_front();
++    step();
++    if ( !m_steps.empty() )
++    {
++        update();
++        m_stepFallback.start();
++    }
++}
++
++void wxQtGLWidget::SendGestures(const QPointF& a, const QPointF& b, bool start, bool end)
++{
++    wxGLCanvas* const win = GetHandler();
++    const QPointF centre = (a + b) / 2;
++    const QPointF d = b - a;
++    const double distance = std::max(1.0, std::hypot(d.x(), d.y()));
++    const double angle = std::atan2(d.y(), d.x());
++    if ( start )
++    {
++        m_lastCentre = centre;
++        m_startDistance = distance;
++        m_startAngle = angle;
++        m_rotating = false;
++    }
++    m_lastA = a;
++    m_lastB = b;
++    const wxPoint pos(wxRound(centre.x()), wxRound(centre.y()));
++
++    wxPanGestureEvent pan(win->GetId());
++    pan.SetEventObject(win);
++    pan.SetPosition(pos);
++    pan.SetDelta(wxPoint(wxRound(centre.x() - m_lastCentre.x()), wxRound(centre.y() - m_lastCentre.y())));
++    pan.SetGestureStart(start);
++    pan.SetGestureEnd(end);
++    EmitEvent(pan);
++    m_lastCentre = centre;
++
++    wxZoomGestureEvent zoom(win->GetId());
++    zoom.SetEventObject(win);
++    zoom.SetPosition(pos);
++    zoom.SetZoomFactor(distance / m_startDistance);
++    zoom.SetGestureStart(start);
++    zoom.SetGestureEnd(end);
++    EmitEvent(zoom);
++
++    // A twist only counts past a few degrees, so pinching and panning do not spin the view.
++    double twist = std::remainder(angle - m_startAngle, 2 * M_PI);
++    const double deadZone = 0.17;
++    if ( !m_rotating && std::abs(twist) > deadZone )
++    {
++        m_rotating = true;
++        wxRotateGestureEvent rotateStart(win->GetId());
++        rotateStart.SetEventObject(win);
++        rotateStart.SetPosition(pos);
++        rotateStart.SetRotationAngle(0);
++        rotateStart.SetGestureStart();
++        EmitEvent(rotateStart);
++    }
++    if ( m_rotating )
++    {
++        wxRotateGestureEvent rotate(win->GetId());
++        rotate.SetEventObject(win);
++        rotate.SetPosition(pos);
++        rotate.SetRotationAngle(twist > 0 ? twist - deadZone : twist + deadZone);
++        rotate.SetGestureEnd(end);
++        EmitEvent(rotate);
++    }
++}
++
++void wxQtGLWidget::HandleTouch(QTouchEvent* event)
++{
++    event->accept();
++    const QList<QEventPoint>& points = event->points();
++    QList<QPointF> down;
++    for ( const QEventPoint& p : points )
++        if ( p.state() != QEventPoint::Released )
++            down.push_back(p.position());
++
++    const bool finished = event->type() == QEvent::TouchEnd || event->type() == QEvent::TouchCancel;
++    if ( event->type() == QEvent::TouchBegin )
++        m_touchMode = TouchMode::None;
++
++    if ( !finished && down.size() >= 2 )
++    {
++        m_longPress.stop();
++        if ( m_touchMode == TouchMode::Mouse )
++            SendMouse(QEvent::MouseButtonRelease, m_lastMousePos, Qt::NoButton); // end the one-finger drag
++        if ( m_touchMode == TouchMode::Arming )
++            m_touchMode = TouchMode::Done; // the second finger came first: a gesture, not a drag
++        const bool start = m_touchMode != TouchMode::Gesture;
++        m_touchMode = TouchMode::Gesture;
++        SendGestures(down[0], down[1], start, false);
++        return;
++    }
++
++    if ( m_touchMode == TouchMode::Gesture )
++    {
++        // lifting the fingers ends the gesture; the last one up must not start a drag
++        SendGestures(m_lastA, m_lastB, false, true); // same points: no extra pan, zoom or twist
++
++        m_touchMode = TouchMode::Done;
++    }
++    else if ( m_touchMode == TouchMode::None && !finished && down.size() == 1 )
++    {
++        m_touchMode = TouchMode::Pending;
++        m_touchStart = down[0];
++        m_lastMousePos = down[0];
++        // Hover where the finger is: 3D scenes find the object under the pointer while rendering, so it is
++        // known by the time a tap or long press acts on it.
++        SendMouse(QEvent::MouseMove, m_touchStart, Qt::NoButton);
++        m_longPress.start();
++    }
++    else if ( m_touchMode == TouchMode::Pending && !finished && down.size() == 1 )
++    {
++        // a drag starts once the finger has clearly moved
++        const QPointF moved = down[0] - m_touchStart;
++        if ( std::hypot(moved.x(), moved.y()) > 8.0 )
++        {
++            m_longPress.stop();
++            m_touchMode = TouchMode::Arming;
++            m_liftedWhileArming = false;
++            m_lastMousePos = down[0];
++            // the hover sent when the finger went down needs a frame to find what is under it
++            QueueSteps({ [this] { StartDrag(); } });
++        }
++    }
++    else if ( m_touchMode == TouchMode::Arming && !finished && down.size() == 1 )
++    {
++        m_lastMousePos = down[0]; // replayed once the drag starts
++    }
++    else if ( m_touchMode == TouchMode::Arming && finished )
++    {
++        m_liftedWhileArming = true; // StartDrag() releases
++        return;
++    }
++    else if ( m_touchMode == TouchMode::Mouse && !finished && down.size() == 1 )
++    {
++        SendMouse(QEvent::MouseMove, down[0], Qt::LeftButton);
++    }
++    else if ( m_touchMode == TouchMode::Pending && finished )
++    {
++        // A tap: a click where the finger went down.
++        m_longPress.stop();
++        m_touchMode = TouchMode::None;
++        const QPointF pos = m_touchStart;
++        QueueSteps({ [this, pos] { SendMouse(QEvent::MouseMove, pos, Qt::NoButton); },
++                     [this, pos] { SendMouse(QEvent::MouseButtonPress, pos, Qt::LeftButton); },
++                     [this, pos] { SendMouse(QEvent::MouseButtonRelease, pos, Qt::NoButton); SendLeave(); } });
++        return;
++    }
++    else if ( m_touchMode == TouchMode::Mouse && finished )
++    {
++        SendMouse(QEvent::MouseButtonRelease, points.isEmpty() ? m_lastMousePos : points.first().position(), Qt::NoButton);
++    }
++
++    if ( finished )
++    {
++        if ( m_steps.empty() )
++            SendLeave();
++        else
++            QueueSteps({ [this] { SendLeave(); } }); // after the long press ends
++        m_touchMode = TouchMode::None;
++    }
++}
++#endif // __ANDROID__
++
+ void wxQtGLWidget::resizeEvent ( QResizeEvent * event )
+ {
+     QOpenGLWidget::resizeEvent(event);
+@@ -50,14 +376,24 @@ void wxQtGLWidget::paintEvent ( QPaintEvent * event )
+ 
+ void wxQtGLWidget::resizeGL(int w, int h)
+ {
++    // the framebuffer was recreated, the frame drawn outside paintGL() is gone
++    m_skipNextPaint = false;
+     QResizeEvent qevt(QSize(w, h), QSize(w, h));
+     GetHandler()->QtHandleResizeEvent(this, &qevt);
+ }
+ 
+ void wxQtGLWidget::paintGL()
+ {
++    if ( m_skipNextPaint )
++    {
++        // the framebuffer already holds the frame SwapBuffers() asked to present
++        m_skipNextPaint = false;
++        return;
++    }
++    m_inPaint = true;
+     wxPaintEvent event( GetHandler() );
+     EmitEvent(event);
++    m_inPaint = false;
+ }
+ 
+ // ----------------------------------------------------------------------------
+@@ -354,12 +690,14 @@ bool wxGLContext::SetCurrent(const wxGLCanvas& win) const
+     if (!m_glContext)
+         const_cast<wxGLContext *>(this)->m_glContext = context;
+ 
+-    if (context != m_glContext)
++    if (context != m_glContext && !QCoreApplication::testAttribute(Qt::AA_ShareOpenGLContexts))
+     {
+         // I think I must destroy and recreate the QOpenGLWidget to change the context?
+         wxLogDebug("Calling wxGLContext::SetCurrent with a different canvas is not supported in wxQt");
+         return false;
+     }
++    // Otherwise each QOpenGLWidget has its own context, but they all share their objects (buffers, textures,
++    // shaders), which is what a wxGLContext used with several canvases provides on the other ports.
+ 
+     qglWidget->makeCurrent();
+     return true;
+@@ -494,7 +832,14 @@ bool wxGLCanvas::Create(wxWindow *parent,
+ 
+ bool wxGLCanvas::SwapBuffers()
+ {
+-    // Not possible
++    // QOpenGLWidget presents its framebuffer itself after paintGL(); outside of it, schedule that.
++    if ( auto* const widget = dynamic_cast<wxQtGLWidget*>(GetHandle()) )
++    {
++        widget->PresentFrameRenderedOutsidePaint();
++#ifdef __ANDROID__
++        widget->FrameDone();
++#endif
++    }
+     return true;
+ }
+ 
+diff --git a/src/qt/secretstore_android.cpp b/src/qt/secretstore_android.cpp
+new file mode 100644
+index 0000000..10bac8f
+--- /dev/null
++++ b/src/qt/secretstore_android.cpp
+@@ -0,0 +1,102 @@
++///////////////////////////////////////////////////////////////////////////////
++// Name:        src/qt/secretstore_android.cpp
++// Purpose:     wxSecretStore for Android (Android Keystore via Java bridge)
++// Licence:     wxWindows licence
++///////////////////////////////////////////////////////////////////////////////
++
++#include "wx/wxprec.h"
++
++#if wxUSE_SECRETSTORE && defined(__WXQT__) && defined(__ANDROID__)
++
++#include "wx/secretstore.h"
++#include "wx/private/secretstore.h"
++#include "wx/qt/private/converter.h"
++#include "wx/base64.h"
++
++#include <QtCore/QJniObject>
++#include <QtCore/QCoreApplication>
++
++namespace
++{
++const char* BRIDGE_CLASS = "org/orcaport/wx/SecretStoreBridge";
++
++QJniObject appContext() { return QNativeInterface::QAndroidApplication::context(); }
++
++class wxSecretStoreAndroidImpl : public wxSecretStoreImpl
++{
++public:
++    bool IsOk(wxString* errmsg) const override
++    {
++        if (appContext().isValid())
++            return true;
++        if (errmsg)
++            *errmsg = wxS("no Android context");
++        return false;
++    }
++
++    bool Save(const wxString& service, const wxString& username,
++              const wxSecretValueImpl& password, wxString& errmsg) override
++    {
++        const wxString b64 = wxBase64Encode(password.GetData(), password.GetSize());
++        const jboolean ok = QJniObject::callStaticMethod<jboolean>(BRIDGE_CLASS, "save",
++            "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z",
++            appContext().object(),
++            QJniObject::fromString(wxQtConvertString(service)).object(),
++            QJniObject::fromString(wxQtConvertString(username)).object(),
++            QJniObject::fromString(wxQtConvertString(b64)).object());
++        if (!ok)
++            errmsg = wxS("Android Keystore write failed");
++        return ok;
++    }
++
++    bool Load(const wxString& service, wxString* username,
++              wxSecretValueImpl** password, wxString& errmsg) const override
++    {
++        QJniObject r = QJniObject::callStaticObjectMethod(BRIDGE_CLASS, "load",
++            "(Landroid/content/Context;Ljava/lang/String;)Ljava/lang/String;",
++            appContext().object(), QJniObject::fromString(wxQtConvertString(service)).object());
++        if (!r.isValid())
++        {
++            // Not an error: nothing stored for this service.
++            return false;
++        }
++        const wxString s = wxQtConvertString(r.toString());
++        const size_t nl = s.find('\n');
++        if (nl == wxString::npos)
++        {
++            errmsg = wxS("corrupt entry");
++            return false;
++        }
++        if (username)
++            *username = s.substr(0, nl);
++        const wxMemoryBuffer buf = wxBase64Decode(s.substr(nl + 1));
++        *password = new wxSecretValueGenericImpl(buf.GetDataLen(), buf.GetData());
++        return true;
++    }
++
++    bool Delete(const wxString& service, wxString& errmsg) override
++    {
++        const jboolean ok = QJniObject::callStaticMethod<jboolean>(BRIDGE_CLASS, "delete",
++            "(Landroid/content/Context;Ljava/lang/String;)Z",
++            appContext().object(), QJniObject::fromString(wxQtConvertString(service)).object());
++        if (!ok)
++            errmsg = wxS("Android Keystore delete failed");
++        return ok;
++    }
++};
++}
++
++/* static */
++wxSecretValueImpl*
++wxSecretValue::NewImpl(size_t size, const void *data, const char* WXUNUSED(contentType))
++{
++    return new wxSecretValueGenericImpl(size, data);
++}
++
++/* static */
++wxSecretStore wxSecretStore::GetDefault()
++{
++    return wxSecretStore(new wxSecretStoreAndroidImpl());
++}
++
++#endif // wxUSE_SECRETSTORE && __WXQT__ && __ANDROID__
+diff --git a/src/qt/toplevel.cpp b/src/qt/toplevel.cpp
+index 2c3fed1..5d21f0b 100644
+--- a/src/qt/toplevel.cpp
++++ b/src/qt/toplevel.cpp
+@@ -12,6 +12,19 @@
+ #include "wx/qt/private/converter.h"
+ #include <QtGui/QIcon>
+ #include <QtWidgets/QWidget>
++#ifdef __ANDROID__
++#include <QtGui/QGuiApplication>
++#include <QtGui/QScreen>
++#include "wx/dialog.h"
++
++// The screen area app windows use. Frames run full screen (see Show()), so this is the whole screen: with the
++// window below the status bar, Qt maps touches on popup windows (menus, combo lists) one bar height off.
++static QRect wxQtAvailableScreenArea()
++{
++    QScreen* const screen = QGuiApplication::primaryScreen();
++    return screen ? screen->geometry() : QRect(0, 0, 640, 480);
++}
++#endif
+ 
+ wxTopLevelWindowQt::wxTopLevelWindowQt(wxWindow *parent,
+            wxWindowID winId,
+@@ -48,6 +61,16 @@ bool wxTopLevelWindowQt::Create( wxWindow *parent, wxWindowID winId,
+ 
+ bool wxTopLevelWindowQt::Show(bool show)
+ {
++#ifdef __ANDROID__
++    // fit (frames: fill) the screen even if the geometry was set before any of the clamping could apply
++    if ( show )
++    {
++        const wxRect rect = GetRect();
++        DoSetSize(rect.x, rect.y, rect.width, rect.height, wxSIZE_ALLOW_MINUS_ONE);
++        if ( !wxDynamicCast(this, wxDialog) )
++            GetHandle()->setWindowState(GetHandle()->windowState() | Qt::WindowFullScreen);
++    }
++#endif
+     if ( !wxTopLevelWindowBase::Show(show) )
+         return false;
+ 
+@@ -245,6 +268,14 @@ void wxTopLevelWindowQt::DoSetSizeHints( int minW, int minH,
+     minW = wxMax(0, minW);
+     minH = wxMax(0, minH);
+ 
++#ifdef __ANDROID__
++    // Desktop-sized minimums (e.g. a main frame laid out for 1000+ pixels) must not push the window past the
++    // screen: it cannot be moved or resized there.
++    const QRect area = wxQtAvailableScreenArea();
++    minW = wxMin(minW, area.width());
++    minH = wxMin(minH, area.height());
++#endif
++
+     incW = wxMax(0, incW);
+     incH = wxMax(0, incH);
+ 
+@@ -254,3 +285,35 @@ void wxTopLevelWindowQt::DoSetSizeHints( int minW, int minH,
+ 
+     wxTopLevelWindowBase::DoSetSizeHints(minW, minH, maxW, maxH, incW, incH);
+ }
++
++#ifdef __ANDROID__
++void wxTopLevelWindowQt::DoSetSize(int x, int y, int width, int height, int sizeFlags)
++{
++    const QRect area = wxQtAvailableScreenArea();
++    if ( !wxDynamicCast(this, wxDialog) )
++    {
++        // Frames are the app's screens: they always fill the area the system gives the app.
++        x = area.x();
++        y = area.y();
++        width = area.width();
++        height = area.height();
++        sizeFlags |= wxSIZE_ALLOW_MINUS_ONE;
++    }
++    else
++    {
++        // Dialogs keep their size when it fits, and are pulled back onto the screen otherwise.
++        if ( width > area.width() )
++            width = area.width();
++        if ( height > area.height() )
++            height = area.height();
++        const int w = width > 0 ? width : GetSize().x;
++        const int h = height > 0 ? height : GetSize().y;
++        if ( x != wxDefaultCoord )
++            x = wxMax(area.left(), wxMin(x, area.right() + 1 - w));
++        if ( y != wxDefaultCoord )
++            y = wxMax(area.top(), wxMin(y, area.bottom() + 1 - h));
++    }
++
++    wxTopLevelWindowBase::DoSetSize(x, y, width, height, sizeFlags);
++}
++#endif // __ANDROID__
+diff --git a/src/qt/webview_android.cpp b/src/qt/webview_android.cpp
+new file mode 100644
+index 0000000..7a3df45
+--- /dev/null
++++ b/src/qt/webview_android.cpp
+@@ -0,0 +1,468 @@
++/////////////////////////////////////////////////////////////////////////////
++// Name:        src/qt/webview_android.cpp
++// Purpose:     wxWebView backend on top of android.webkit.WebView (wxQt on Android)
++// Licence:     wxWindows licence
++/////////////////////////////////////////////////////////////////////////////
++
++#include "wx/wxprec.h"
++
++#if wxUSE_WEBVIEW && defined(__WXQT__) && defined(__ANDROID__)
++
++#include "wx/qt/webview_android.h"
++#include "wx/private/webview.h"
++#include "wx/qt/private/converter.h"
++#include "wx/log.h"
++#include "wx/app.h"
++
++#include "wx/dialog.h"
++#include <QtCore/QJniEnvironment>
++#include <QtCore/QJniObject>
++#include <QtCore/QCoreApplication>
++#include <QtWidgets/QWidget>
++#include <QtWidgets/QApplication>
++
++#include <mutex>
++#include <atomic>
++#include <map>
++
++extern WXDLLIMPEXP_DATA_WEBVIEW(const char) wxWebViewBackendAndroid[] = "wxWebViewAndroid";
++
++namespace
++{
++// keep in sync with WebViewBridge.java
++enum { EV_NAVIGATING, EV_NAVIGATED, EV_LOADED, EV_ERROR, EV_TITLE, EV_NEWWINDOW, EV_MESSAGE, EV_SCRIPT_RESULT, EV_CREATED, EV_BACK };
++
++const char* BRIDGE_CLASS = "org/orcaport/wx/WebViewBridge";
++
++std::mutex                          s_registryMutex;
++std::map<jlong, wxWebViewAndroid*>  s_registry;
++std::atomic<jlong>                  s_nextId{1};
++
++wxString ToWx(const QString& s) { return wxQtConvertString(s); }
++QString  ToQt(const wxString& s) { return wxQtConvertString(s); }
++}
++
++// Gives the bridge (and the native callback) access to the private bits of the control.
++class wxWebViewAndroidImpl
++{
++public:
++    explicit wxWebViewAndroidImpl(wxWebViewAndroid* owner) : owner(owner) {}
++
++    wxWebViewAndroid* owner;
++    jlong             id = 0;
++    QJniObject        bridge;
++    wxString          lastPostedBounds;
++    bool              visible = true;
++    wxVector<wxSharedPtr<wxWebViewHandler>> handlers;
++
++    bool valid() const { return bridge.isValid(); }
++
++    static void onNativeEvent(JNIEnv*, jclass, jlong id, jint type, jstring a, jstring b, jint i);
++    void dispatch(int type, const wxString& a, const wxString& b, int i);
++};
++
++void wxWebViewAndroidImpl::onNativeEvent(JNIEnv*, jclass, jlong id, jint type, jstring a, jstring b, jint i)
++{
++    // Runs on the Android UI thread (or a WebView thread): copy the strings, then hop to the wx thread.
++    const wxString sa = a ? ToWx(QJniObject::fromLocalRef(a).toString()) : wxString();
++    const wxString sb = b ? ToWx(QJniObject::fromLocalRef(b).toString()) : wxString();
++
++    std::lock_guard<std::mutex> lock(s_registryMutex);
++    auto it = s_registry.find(id);
++    if (it == s_registry.end())
++        return;
++    wxWebViewAndroid* view = it->second;
++    wxWebViewAndroidImpl* impl = view->m_impl;
++    view->CallAfter([impl, type, sa, sb, i]() { impl->dispatch(type, sa, sb, i); });
++}
++
++void wxWebViewAndroidImpl::dispatch(int type, const wxString& a, const wxString& b, int i)
++{
++    wxWebViewAndroid* const w = owner;
++    const int wid = w->GetId();
++    wxEventType evtType;
++    wxString url = a, target, handler;
++    wxWebViewNavigationActionFlags flags = wxWEBVIEW_NAV_ACTION_NONE;
++    int intVal = 1;
++    wxString str;
++
++    switch (type)
++    {
++        case EV_CREATED:
++            w->UpdateNativeBounds(true);
++            return;
++        case EV_BACK:
++        {
++            // the system Back key while the page had focus: close the dialog around it, like Escape would
++            if (wxDialog* const dlg = wxDynamicCast(wxGetTopLevelParent(w), wxDialog))
++            {
++                if (dlg->IsModal())
++                    dlg->EndModal(wxID_CANCEL);
++                else
++                    dlg->Close();
++            }
++            return;
++        }
++        case EV_NAVIGATING:
++            evtType = wxEVT_WEBVIEW_NAVIGATING;
++            target = b;
++            flags = i ? wxWEBVIEW_NAV_ACTION_USER : wxWEBVIEW_NAV_ACTION_OTHER;
++            break;
++        case EV_NAVIGATED: evtType = wxEVT_WEBVIEW_NAVIGATED; break;
++        case EV_LOADED:    evtType = wxEVT_WEBVIEW_LOADED;    break;
++        case EV_NEWWINDOW:
++            evtType = wxEVT_WEBVIEW_NEWWINDOW;
++            flags = wxWEBVIEW_NAV_ACTION_USER;
++            break;
++        case EV_TITLE:
++            evtType = wxEVT_WEBVIEW_TITLE_CHANGED;
++            str = a;
++            url = w->GetCurrentURL();
++            break;
++        case EV_MESSAGE:
++        {
++            // a = handler name, b = payload
++            evtType = wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED;
++            handler = a;
++            url = w->GetCurrentURL();
++            str = b;
++            break;
++        }
++        case EV_ERROR:
++        {
++            evtType = wxEVT_WEBVIEW_ERROR;
++            str = b;
++            intVal = 0;
++            // android.webkit.WebViewClient.ERROR_* -> wxWebViewNavigationError
++            switch (i)
++            {
++                case -2: case -6: case -7: case -8: case -11: intVal = wxWEBVIEW_NAV_ERR_CONNECTION; break;
++                case -11 - 100: intVal = wxWEBVIEW_NAV_ERR_CERTIFICATE; break;
++                case -4: intVal = wxWEBVIEW_NAV_ERR_AUTH; break;
++                case -9: case -12: intVal = wxWEBVIEW_NAV_ERR_SECURITY; break;
++                case -14: intVal = wxWEBVIEW_NAV_ERR_NOT_FOUND; break;
++                case -1: case -3: case -5: case -10: case -13: intVal = wxWEBVIEW_NAV_ERR_REQUEST; break;
++                default: intVal = wxWEBVIEW_NAV_ERR_OTHER; break;
++            }
++            wxWebViewEvent evt(evtType, wid, url, target, flags);
++            evt.SetEventObject(w);
++            evt.SetString(str);
++            evt.SetInt(intVal);
++            w->HandleWindowEvent(evt);
++            return;
++        }
++        case EV_SCRIPT_RESULT:
++        {
++            // a = request id (client data pointer), b = output
++            unsigned long long v = 0;
++            a.ToULongLong(&v);
++            w->SendScriptResult(reinterpret_cast<void*>(static_cast<uintptr_t>(v)), i != 0, b);
++            return;
++        }
++        default:
++            return;
++    }
++
++    wxWebViewEvent evt(evtType, wid, url, target, flags, handler);
++    evt.SetEventObject(w);
++    evt.SetInt(intVal);
++    evt.SetString(str);
++    w->HandleWindowEvent(evt);
++}
++
++// ----------------------------------------------------------------------------
++
++namespace
++{
++bool registerNatives()
++{
++    static bool done = false, ok = false;
++    if (done) return ok;
++    done = true;
++    QJniEnvironment env;
++    static const JNINativeMethod methods[] = {
++        { "nativeEvent", "(JILjava/lang/String;Ljava/lang/String;I)V",
++          reinterpret_cast<void*>(&wxWebViewAndroidImpl::onNativeEvent) },
++    };
++    ok = env.registerNativeMethods(BRIDGE_CLASS, methods, 1);
++    if (!ok)
++        wxLogError("wxWebViewAndroid: cannot register native methods of %s (is the Java bridge in the APK?)", BRIDGE_CLASS);
++    return ok;
++}
++}
++
++wxWebViewAndroid::wxWebViewAndroid()
++{
++    m_impl = new wxWebViewAndroidImpl(this);
++    m_geometryTimer.SetOwner(this);
++    Bind(wxEVT_TIMER, &wxWebViewAndroid::OnGeometryTimer, this);
++}
++
++wxWebViewAndroid::~wxWebViewAndroid()
++{
++    m_geometryTimer.Stop();
++    {
++        std::lock_guard<std::mutex> lock(s_registryMutex);
++        s_registry.erase(m_impl->id);
++    }
++    if (m_impl->valid())
++        m_impl->bridge.callMethod<void>("destroy");
++    delete m_impl;
++}
++
++bool wxWebViewAndroid::Create(wxWindow* parent, wxWindowID id, const wxString& url,
++                              const wxPoint& pos, const wxSize& size, long style, const wxString& name)
++{
++    if (!wxControl::Create(parent, id, pos, size, style, wxDefaultValidator, name))
++        return false;
++
++    if (!registerNatives())
++        return false;
++
++    QJniObject activity = QNativeInterface::QAndroidApplication::context();
++    if (!activity.isValid())
++    {
++        wxLogError("wxWebViewAndroid: no Android activity");
++        return false;
++    }
++
++    m_impl->id = s_nextId++;
++    {
++        std::lock_guard<std::mutex> lock(s_registryMutex);
++        s_registry[m_impl->id] = this;
++    }
++    m_impl->bridge = QJniObject::callStaticObjectMethod(BRIDGE_CLASS, "create",
++        "(Landroid/app/Activity;J)Lorg/orcaport/wx/WebViewBridge;", activity.object(), m_impl->id);
++    if (!m_impl->valid())
++    {
++        wxLogError("wxWebViewAndroid: WebViewBridge.create failed");
++        return false;
++    }
++
++    m_userAgent = ToWx(m_impl->bridge.callObjectMethod("getUserAgent", "()Ljava/lang/String;").toString());
++
++    SetInitialSize(size);
++    m_geometryTimer.Start(50);
++
++    if (!url.empty())
++        LoadURL(url);
++
++    NotifyWebViewCreated();
++    return true;
++}
++
++void wxWebViewAndroid::OnGeometryTimer(wxTimerEvent&) { UpdateNativeBounds(false); }
++
++void wxWebViewAndroid::UpdateNativeBounds(bool force)
++{
++    if (!m_impl->valid())
++        return;
++    QWidget* qw = GetHandle();
++    if (!qw)
++        return;
++
++    // The native view is drawn above all Qt content, so it would hide menus, dropdowns and dialogs that open
++    // over it: take it off screen while such a window overlaps it.
++    bool covered = false;
++    if (IsShownOnScreen())
++    {
++        const QRect ours(qw->mapToGlobal(QPoint(0, 0)), qw->size());
++        const QWidget* const ownWindow = qw->window();
++        for (const QWidget* tl : QApplication::topLevelWidgets())
++        {
++            if (tl == ownWindow || !tl->isVisible() || tl->width() <= 1 || tl->height() <= 1)
++                continue;
++            // only what the user is interacting with on top: popups (menus, dropdowns) and modal or active dialogs,
++            // not every secondary window the program keeps around
++            const bool popup = tl->windowType() == Qt::Popup;
++            const bool dialog = (tl->windowType() == Qt::Dialog || tl->windowType() == Qt::Sheet)
++                                && (tl->isModal() || tl->isActiveWindow());
++            if (!popup && !dialog)
++                continue;
++            if (tl->frameGeometry().intersects(ours))
++            {
++                covered = true;
++                break;
++            }
++        }
++    }
++
++    const bool show = IsShownOnScreen() && !covered;
++    if (show != m_impl->visible || force)
++    {
++        m_impl->visible = show;
++        m_impl->bridge.callMethod<void>("setVisible", "(Z)V", jboolean(show));
++    }
++    if (!show)
++        return;
++
++    const qreal dpr = qw->devicePixelRatioF();
++    const QPoint origin = qw->mapToGlobal(QPoint(0, 0));
++    const int x = qRound(origin.x() * dpr), y = qRound(origin.y() * dpr);
++    const int w = qRound(qw->width() * dpr), h = qRound(qw->height() * dpr);
++    const wxString key = wxString::Format("%d,%d,%d,%d", x, y, w, h);
++    if (!force && key == m_impl->lastPostedBounds)
++        return;
++    m_impl->lastPostedBounds = key;
++    m_impl->bridge.callMethod<void>("setBounds", "(IIII)V", jint(x), jint(y), jint(w), jint(h));
++}
++
++void wxWebViewAndroid::DoSetSize(int x, int y, int width, int height, int sizeFlags)
++{
++    wxControl::DoSetSize(x, y, width, height, sizeFlags);
++    UpdateNativeBounds(false);
++}
++
++bool wxWebViewAndroid::Show(bool show)
++{
++    const bool r = wxControl::Show(show);
++    UpdateNativeBounds(true);
++    return r;
++}
++
++bool wxWebViewAndroid::Enable(bool enable) { return wxControl::Enable(enable); }
++
++void wxWebViewAndroid::SetFocus()
++{
++    wxControl::SetFocus();
++    if (m_impl->valid())
++        m_impl->bridge.callMethod<void>("requestFocusNative");
++}
++
++void wxWebViewAndroid::LoadURL(const wxString& url)
++{
++    if (m_impl->valid())
++        m_impl->bridge.callMethod<void>("loadUrl", "(Ljava/lang/String;)V", QJniObject::fromString(ToQt(url)).object());
++}
++
++void wxWebViewAndroid::DoSetPage(const wxString& html, const wxString& baseUrl)
++{
++    if (m_impl->valid())
++        m_impl->bridge.callMethod<void>("loadHtml", "(Ljava/lang/String;Ljava/lang/String;)V",
++                                        QJniObject::fromString(ToQt(html)).object(),
++                                        QJniObject::fromString(ToQt(baseUrl)).object());
++}
++
++wxString wxWebViewAndroid::GetCurrentURL() const
++{
++    return m_impl->valid()
++        ? ToWx(m_impl->bridge.callObjectMethod("getUrl", "()Ljava/lang/String;").toString()) : wxString();
++}
++
++wxString wxWebViewAndroid::GetCurrentTitle() const
++{
++    return m_impl->valid()
++        ? ToWx(m_impl->bridge.callObjectMethod("getTitle", "()Ljava/lang/String;").toString()) : wxString();
++}
++
++bool wxWebViewAndroid::IsBusy() const { return m_impl->valid() && m_impl->bridge.callMethod<jboolean>("isBusy"); }
++
++void wxWebViewAndroid::RegisterHandler(wxSharedPtr<wxWebViewHandler> handler)
++{
++    // TODO: custom scheme handlers need WebViewClient.shouldInterceptRequest plumbing.
++    m_impl->handlers.push_back(handler);
++    wxLogWarning("wxWebViewAndroid: custom scheme handler '%s' registered but not served yet", handler->GetName());
++}
++
++void wxWebViewAndroid::Reload(wxWebViewReloadFlags flags)
++{
++    if (m_impl->valid())
++        m_impl->bridge.callMethod<void>("reload", "(Z)V", jboolean(flags == wxWEBVIEW_RELOAD_NO_CACHE));
++}
++
++void wxWebViewAndroid::Stop() { if (m_impl->valid()) m_impl->bridge.callMethod<void>("stop"); }
++
++bool wxWebViewAndroid::SetUserAgent(const wxString& userAgent)
++{
++    if (!m_impl->valid()) return false;
++    m_userAgent = userAgent;
++    m_impl->bridge.callMethod<void>("setUserAgent", "(Ljava/lang/String;)V", QJniObject::fromString(ToQt(userAgent)).object());
++    return true;
++}
++
++wxString wxWebViewAndroid::GetUserAgent() const { return m_userAgent; }
++
++void wxWebViewAndroid::EnableContextMenu(bool enable) { wxWebView::EnableContextMenu(enable); }
++
++void wxWebViewAndroid::EnableAccessToDevTools(bool enable)
++{
++    m_devTools = enable;
++    if (m_impl->valid())
++        m_impl->bridge.callMethod<void>("setDevTools", "(Z)V", jboolean(enable));
++}
++
++bool wxWebViewAndroid::ClearBrowsingData(int, wxDateTime)
++{
++    if (!m_impl->valid()) return false;
++    m_impl->bridge.callMethod<void>("clearBrowsingData");
++    return true;
++}
++
++void wxWebViewAndroid::RunScriptAsync(const wxString& javascript, void* clientData) const
++{
++    if (!m_impl->valid())
++    {
++        const_cast<wxWebViewAndroid*>(this)->CallAfter([this, clientData]() { SendScriptResult(clientData, false, wxString()); });
++        return;
++    }
++    m_impl->bridge.callMethod<void>("runScript", "(Ljava/lang/String;J)V",
++                                    QJniObject::fromString(ToQt(javascript)).object(),
++                                    jlong(reinterpret_cast<uintptr_t>(clientData)));
++}
++
++bool wxWebViewAndroid::AddScriptMessageHandler(const wxString& name)
++{
++    if (!m_impl->valid()) return false;
++    m_impl->bridge.callMethod<void>("addMessageHandler", "(Ljava/lang/String;)V", QJniObject::fromString(ToQt(name)).object());
++    return true;
++}
++
++bool wxWebViewAndroid::RemoveScriptMessageHandler(const wxString& name)
++{
++    if (!m_impl->valid()) return false;
++    m_impl->bridge.callMethod<void>("removeMessageHandler", "(Ljava/lang/String;)V", QJniObject::fromString(ToQt(name)).object());
++    return true;
++}
++
++bool wxWebViewAndroid::AddUserScript(const wxString& javascript, wxWebViewUserScriptInjectionTime)
++{
++    // Injected from WebViewClient.onPageStarted: very close to, but slightly after, document start.
++    if (!m_impl->valid()) return false;
++    m_impl->bridge.callMethod<void>("addUserScript", "(Ljava/lang/String;)V", QJniObject::fromString(ToQt(javascript)).object());
++    return true;
++}
++
++void wxWebViewAndroid::RemoveAllUserScripts()
++{
++    if (m_impl->valid())
++        m_impl->bridge.callMethod<void>("removeAllUserScripts");
++}
++
++bool wxWebViewAndroid::CanGoBack() const    { return m_impl->valid() && m_impl->bridge.callMethod<jboolean>("canGoBack"); }
++bool wxWebViewAndroid::CanGoForward() const { return m_impl->valid() && m_impl->bridge.callMethod<jboolean>("canGoForward"); }
++void wxWebViewAndroid::GoBack()    { if (m_impl->valid()) m_impl->bridge.callMethod<void>("goBack"); }
++void wxWebViewAndroid::GoForward() { if (m_impl->valid()) m_impl->bridge.callMethod<void>("goForward"); }
++void wxWebViewAndroid::ClearHistory() { if (m_impl->valid()) m_impl->bridge.callMethod<void>("clearHistory"); }
++
++wxVector<wxSharedPtr<wxWebViewHistoryItem> > wxWebViewAndroid::GetBackwardHistory() { return {}; }
++wxVector<wxSharedPtr<wxWebViewHistoryItem> > wxWebViewAndroid::GetForwardHistory() { return {}; }
++void wxWebViewAndroid::LoadHistoryItem(wxSharedPtr<wxWebViewHistoryItem> item)
++{
++    if (item) LoadURL(item->GetUrl());
++}
++
++void wxWebViewAndroid::SetZoomFactor(float zoom)
++{
++    m_zoom = zoom;
++    if (m_impl->valid())
++        m_impl->bridge.callMethod<void>("setZoom", "(F)V", jfloat(zoom));
++}
++
++void* wxWebViewAndroid::GetNativeBackend() const { return m_impl->bridge.object(); }
++
++wxWebViewConfiguration wxWebViewFactoryAndroid::CreateConfiguration()
++{
++    return wxWebViewConfiguration(wxWebViewBackendAndroid, new wxWebViewConfigurationImpl);
++}
++
++#endif // wxUSE_WEBVIEW && __WXQT__ && __ANDROID__
+diff --git a/src/qt/window.cpp b/src/qt/window.cpp
+index ebc661e..4b09de8 100644
+--- a/src/qt/window.cpp
++++ b/src/qt/window.cpp
+@@ -20,6 +20,11 @@
+ #include <QtWidgets/QMainWindow>
+ #include <QtWidgets/QMenu>
+ #include <QShortcut>
++#ifdef __ANDROID__
++#include <QtWidgets/QScroller>
++#endif
++
++#include <set>
+ 
+ #ifndef WX_PRECOMP
+     #include "wx/app.h"
+@@ -347,8 +352,24 @@ wxWindowQt::wxWindowQt(wxWindowQt *parent, wxWindowID id, const wxPoint& pos, co
+ }
+ 
+ 
++namespace
++{
++// Parents to lay out again once the event loop is idle, see wxWindowQt::Show().
++std::set<wxWindowQt*> gs_pendingLayouts;
++
++void wxQtLayoutPendingParents()
++{
++    std::set<wxWindowQt*> pending;
++    pending.swap(gs_pendingLayouts);
++    for ( wxWindowQt* win : pending )
++        win->Layout();
++}
++} // anonymous namespace
++
+ wxWindowQt::~wxWindowQt()
+ {
++    gs_pendingLayouts.erase(this);
++
+     if ( !m_qtWindow )
+     {
+         // Pseudo windows don't have a valid m_qtWindow, so just return.
+@@ -416,6 +437,10 @@ bool wxWindowQt::Create( wxWindowQt * parent, wxWindowID id, const wxPoint & pos
+ 
+     if ( m_qtContainer )
+     {
++#ifdef __ANDROID__
++        // Touch screens scroll by dragging the content, also when the drag starts on a control inside it.
++        QScroller::grabGesture(m_qtContainer->viewport(), QScroller::TouchGesture);
++#endif
+         // If wx[HV]SCROLL is not given, the corresponding scrollbar is not shown
+         // at all. Otherwise it may be shown only on demand (default) or always, if
+         // the wxALWAYS_SHOW_SB is specified.
+@@ -489,9 +514,17 @@ void wxWindowQt::PostCreation(bool generic)
+ //    SetWindowStyleFlag( style );
+ //
+ 
++    // Colours (like the font) may have been set before Create(): keep them, they are applied below.
++    const bool hadBgColour = m_hasBgCol, hadFgColour = m_hasFgCol;
++    const wxColour presetBg = m_backgroundColour, presetFg = m_foregroundColour;
++
+     // Set the default color so Paint Event default handler clears the DC:
+     wxWindowBase::SetBackgroundColour(wxColour(GetHandle()->palette().window().color()));
+     wxWindowBase::SetForegroundColour(wxColour(GetHandle()->palette().windowText().color()));
++    if ( hadBgColour )
++        SetBackgroundColour(presetBg);
++    if ( hadFgColour )
++        SetForegroundColour(presetFg);
+ 
+     GetHandle()->setFont( wxWindowBase::GetFont().GetHandle() );
+ 
+@@ -516,6 +549,7 @@ void wxWindowQt::AddChild( wxWindowBase *child )
+     wxWindowBase::AddChild( child );
+ }
+ 
++
+ bool wxWindowQt::Show( bool show )
+ {
+     if ( !wxWindowBase::Show( show ))
+@@ -528,6 +562,17 @@ bool wxWindowQt::Show( bool show )
+         qtWidget->setVisible( show );
+     }
+ 
++    // Sizers skip hidden windows, so a window laid out while hidden and shown afterwards keeps whatever
++    // geometry it had (e.g. its 20x20 default). GTK hides that by re-allocating on show; do the equivalent
++    // and lay the parent out again, once per parent, when the current event has been handled.
++    wxWindowQt* const parent = static_cast<wxWindowQt*>(GetParent());
++    if ( show && parent && !IsTopLevel() && parent->GetSizer() && !parent->IsBeingDeleted() && wxTheApp )
++    {
++        if ( gs_pendingLayouts.empty() )
++            wxTheApp->CallAfter(&wxQtLayoutPendingParents);
++        gs_pendingLayouts.insert(parent);
++    }
++
+     return true;
+ }
+ 
+@@ -567,7 +612,8 @@ bool wxWindowQt::Reparent( wxWindowBase *parent )
+     if ( !wxWindowBase::Reparent( parent ))
+         return false;
+ 
+-    QtReparent( GetHandle(), static_cast<wxWindow*>(parent)->QtGetParentWidget() );
++    // Reparent(nullptr) is used (e.g. by Orca) to detach a window before destroying it.
++    QtReparent( GetHandle(), parent ? static_cast<wxWindow*>(parent)->QtGetParentWidget() : nullptr );
+ 
+     return true;
+ }
+@@ -602,7 +648,14 @@ void wxWindowQt::Update()
+ 
+     QWidget* const widget = wxQtGetDrawingWidget(m_qtContainer, GetHandle());
+ 
++#ifdef __ANDROID__
++    // A synchronous repaint() makes Qt flush (composite and swap) the whole window, which with an OpenGL
++    // widget in it costs a full frame on a phone GPU. Programs call Update() after each Refresh(), many
++    // times per event, so only schedule the paint and let Qt coalesce them.
++    widget->update();
++#else
+     widget->repaint();
++#endif
+ }
+ 
+ // Helper function to refresh the intersection area of the widget _widget_
+@@ -1253,6 +1306,12 @@ void wxWindowQt::DoSetSize(int x, int y, int width, int height, int sizeFlags )
+ 
+     DoMoveWindow( x, y, width, height );
+ 
++    // A parent's Layout() sets the size of every child; when it does not change, Qt sends no resize event, so
++    // a child whose contents changed in the meantime (controls added to or shown in its sizer) would never be
++    // laid out again. GTK re-allocates such children anyway; do the same.
++    if ( width == w && height == h && GetSizer() )
++        Layout();
++
+     // An annoying feature of Qt
+     // if a control is created with size of zero, it is set as hidden by qt
+     // if it is then resized, in some cases it remains hidden, so it
+@@ -1425,14 +1484,19 @@ bool wxWindowQt::QtSetBackgroundStyle()
+     {
+         if (m_backgroundStyle == wxBG_STYLE_PAINT)
+         {
+-            // wx paint handler will draw the invalidated region completely:
+-            widget->setAttribute(Qt::WA_OpaquePaintEvent);
++            // The wx paint handler draws the window itself, but wxBG_STYLE_PAINT does not mean it covers every
++            // pixel: wx windows (e.g. Orca's custom-drawn controls) commonly draw only their shapes and rely on
++            // the parent's pixels showing through, as they do on GTK/MSW. WA_OpaquePaintEvent would make Qt skip
++            // painting the parent underneath such a child and leave black holes, so do not declare it opaque.
++            widget->setAttribute(Qt::WA_OpaquePaintEvent, false);
+         }
+         else if (m_backgroundStyle == wxBG_STYLE_TRANSPARENT)
+         {
+-            widget->setAttribute(Qt::WA_TranslucentBackground);
+-            // avoid a default background color (usually black):
+-            widget->setStyleSheet("background:transparent;");
++            // Qt can only make *top-level* windows translucent. For a child, "transparent" in wx means "the
++            // window shows its parent's colour behind whatever it draws", so let Qt fill the widget with its
++            // palette background (set from the wx colour, or the parent's when that is transparent) first.
++            widget->setAttribute(Qt::WA_NoSystemBackground, false);
++            widget->setAutoFillBackground(true);
+         }
+         else if (m_backgroundStyle == wxBG_STYLE_SYSTEM)
+         {
+@@ -1444,8 +1508,10 @@ bool wxWindowQt::QtSetBackgroundStyle()
+         }
+         else if (m_backgroundStyle == wxBG_STYLE_ERASE)
+         {
+-            // erase events will be fired, if not handled, wx will clear the DC
+-            widget->setAttribute(Qt::WA_OpaquePaintEvent);
++            // erase events will be fired, if not handled, wx will clear the DC. A handler that does nothing
++            // (Orca binds such no-op ones to avoid flicker) means "keep what is there" on GTK/MSW; do not claim
++            // the widget is opaque, or Qt skips painting the parent beneath it and that area stays black.
++            widget->setAttribute(Qt::WA_OpaquePaintEvent, false);
+             // Qt should not clear the background (default):
+             widget->setAutoFillBackground(false);
+         }
+@@ -1474,8 +1540,24 @@ void wxQtChangeRoleColour(QPalette::ColorRole role,
+                           QWidget* widget,
+                           const wxColour& colour)
+ {
++    // wx ignores the alpha of window (back/fore)ground colours on every other port, but Qt would paint
++    // a fully transparent fill: Orca, for one, passes alpha 0 colours as "same as the parent".
++    QColor qcolour = colour.GetQColor();
++    if (!colour.IsOk() || !qcolour.isValid() || qcolour.alpha() == 0)
++    {
++        // An invalid colour means "restore the default" and a fully transparent one (wxTransparentColour, which
++        // Orca passes for "same as the parent") means "show what is behind": in both cases do not paint Qt's
++        // transparent black, take the parent's (or else the application's) colour for this role.
++        QPalette cur = widget->palette();
++        const QWidget *parent = widget->parentWidget();
++        const QPalette ref = parent ? parent->palette() : QApplication::palette(widget);
++        cur.setColor(role, ref.color(role));
++        widget->setPalette(cur);
++        return;
++    }
++    qcolour.setAlpha(255);
+     QPalette palette = widget->palette();
+-    palette.setColor(role, colour.GetQColor());
++    palette.setColor(role, qcolour);
+     widget->setPalette(palette);
+ }
+ 
+@@ -1486,6 +1568,10 @@ bool wxWindowQt::SetBackgroundColour(const wxColour& colour)
+     if ( !wxWindowBase::SetBackgroundColour(colour) )
+         return false;
+ 
++    // Called before Create(): the colour is stored by the base class and applied in PostCreation().
++    if ( !GetHandle() )
++        return true;
++
+     if ( colour.IsOk() )
+     {
+         QWidget *widget = QtGetParentWidget();
+@@ -1500,6 +1586,9 @@ bool wxWindowQt::SetForegroundColour(const wxColour& colour)
+     if (!wxWindowBase::SetForegroundColour(colour))
+         return false;
+ 
++    if ( !GetHandle() )
++        return true;
++
+     QWidget *widget = QtGetParentWidget();
+     wxQtChangeRoleColour(widget->foregroundRole(), widget, colour);
+ 
+@@ -2134,6 +2223,13 @@ bool wxWindowQt::EnableTouchEvents(int eventsMask)
+ {
+     wxCHECK_MSG( GetHandle(), false, "can't be called before creating the window" );
+ 
++#ifdef __ANDROID__
++    // wxGLCanvas turns touches into mouse and gesture events itself (see glcanvas.cpp); Qt's gesture
++    // recognizers would report the same pinch a second time.
++    if ( m_qtWindow->inherits("QOpenGLWidget") )
++        return true;
++#endif
++
+     if ( eventsMask == wxTOUCH_NONE )
+     {
+         m_qtWindow->setAttribute(Qt::WA_AcceptTouchEvents, false);
+diff --git a/src/unix/secretstore.cpp b/src/unix/secretstore.cpp
+index f85b1b5..993945f 100644
+--- a/src/unix/secretstore.cpp
++++ b/src/unix/secretstore.cpp
+@@ -19,7 +19,7 @@
+ #include "wx/wxprec.h"
+ 
+ 
+-#if wxUSE_SECRETSTORE
++#if wxUSE_SECRETSTORE && !defined(__ANDROID__) // Android: src/qt/secretstore_android.cpp
+ 
+ #include "wx/dynlib.h"
+ #include "wx/log.h"

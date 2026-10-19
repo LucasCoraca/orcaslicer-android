@@ -1,0 +1,21 @@
+#!/bin/bash
+# wxWidgets (Orca fork, 3.3.2) with the Qt toolkit for Android, installed into the deps prefix.
+# usage: configure-wx.sh [arm64-v8a|x86_64] [extra cmake args]
+ABI=${1:-arm64-v8a}
+source "$(dirname "$0")/env.sh"
+QT=$(qt_for $ABI)
+P=$R/deps-android/$ABI/usr/local
+cmake -S $R/third_party/wxWidgets -B $R/build/wx-$ABI -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE=$QT/lib/cmake/Qt6/qt.toolchain.cmake \
+  -DQT_HOST_PATH=$QT_HOST_PATH \
+  -DANDROID_ABI=$ABI -DANDROID_PLATFORM=android-28 \
+  -DCMAKE_PREFIX_PATH="$P;$QT" -DCMAKE_FIND_ROOT_PATH="$P;$QT" \
+  -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
+  -DCMAKE_INSTALL_PREFIX=$P \
+  -DwxBUILD_TOOLKIT=qt -DwxBUILD_SHARED=OFF -DwxBUILD_SAMPLES=OFF -DwxBUILD_TESTS=OFF -DwxBUILD_DEMOS=OFF \
+  -DwxBUILD_PRECOMP=ON -DwxBUILD_DEBUG_LEVEL=0 \
+  -DwxUSE_LIBICONV=OFF -DwxUSE_UIACTIONSIMULATOR=OFF -DwxUSE_OPENGL=ON -DwxUSE_AUI=ON -DwxUSE_PRIVATE_FONTS=ON -DwxUSE_WEBVIEW=ON -DwxUSE_SECRETSTORE=ON -DwxUSE_MEDIACTRL=ON -DwxUSE_WEBREQUEST=ON -DwxUSE_WEBREQUEST_CURL=ON \
+  -DwxUSE_REGEX=builtin -DwxUSE_LIBPNG=sys -DwxUSE_ZLIB=sys -DwxUSE_LIBJPEG=sys -DwxUSE_LIBTIFF=OFF -DwxUSE_LIBWEBP=OFF \
+  -DwxUSE_EXPAT=sys -DwxUSE_NANOSVG=OFF -DwxUSE_STC=OFF -DwxUSE_LIBSDL=OFF \
+  "${@:2}"
