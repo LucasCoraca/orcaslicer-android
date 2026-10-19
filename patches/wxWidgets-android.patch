@@ -149,7 +149,7 @@ index 0a9783b..4a762e5 100644
  
  # ---------------------------------------------------------------------------
 diff --git a/build/cmake/toolkit.cmake b/build/cmake/toolkit.cmake
-index ab997cc..23a0b23 100644
+index ab997cc..64ba04a 100644
 --- a/build/cmake/toolkit.cmake
 +++ b/build/cmake/toolkit.cmake
 @@ -134,7 +134,7 @@ if(WXQT)
@@ -161,6 +161,21 @@ index ab997cc..23a0b23 100644
      endif()
  
      foreach(QT_COMPONENT ${QT_COMPONENTS})
+@@ -145,6 +145,14 @@ if(WXQT)
+     endforeach()
+     set(wxTOOLKIT_VERSION ${Qt${QT_VERSION_MAJOR}Core_VERSION})
+ 
++    if(ANDROID AND QT_VERSION_MAJOR EQUAL 6)
++        # glcanvas.cpp gives touch points their target widget (QMutableEventPoint), see HandleTouch().
++        foreach(wxQT_PRIVATE Qt6::CorePrivate Qt6::GuiPrivate)
++            get_target_property(wxQT_PRIVATE_INCLUDE_DIRS ${wxQT_PRIVATE} INTERFACE_INCLUDE_DIRECTORIES)
++            list(APPEND wxTOOLKIT_INCLUDE_DIRS ${wxQT_PRIVATE_INCLUDE_DIRS})
++        endforeach()
++    endif()
++
+     if(ANDROID)
+         # A hack to remove _${ANDROID_ABI} that Qt5AndroidSupport.cmake added
+         # which breaks wx-config.
 diff --git a/build/cmake/utils/CMakeLists.txt b/build/cmake/utils/CMakeLists.txt
 index 608351a..474da7d 100644
 --- a/build/cmake/utils/CMakeLists.txt
@@ -1501,10 +1516,10 @@ index faa1467..fb1507c 100644
 +}
 +#endif // wxUSE_PRIVATE_FONTS
 diff --git a/src/qt/glcanvas.cpp b/src/qt/glcanvas.cpp
-index b3cadb8..d71a900 100644
+index b3cadb8..b530741 100644
 --- a/src/qt/glcanvas.cpp
 +++ b/src/qt/glcanvas.cpp
-@@ -14,9 +14,17 @@
+@@ -14,9 +14,19 @@
  
  #include <QOpenGLContext>
  #include <QOpenGLWidget>
@@ -1513,6 +1528,8 @@ index b3cadb8..d71a900 100644
  #include <QtWidgets/QGestureRecognizer>
  #include <QtWidgets/QGestureEvent>
 +#include <QtGui/QTouchEvent>
++#include <QtGui/QWindow>
++#include <QtGui/private/qeventpoint_p.h>
 +#include <QtGui/QMouseEvent>
 +#include <QtCore/QTimer>
 +#include <QtCore/QElapsedTimer>
@@ -1522,7 +1539,7 @@ index b3cadb8..d71a900 100644
  
  wxGCC_WARNING_SUPPRESS(unused-parameter)
  
-@@ -28,16 +36,375 @@ public:
+@@ -28,16 +38,383 @@ public:
      {
          setFormat(format);
          setFocusPolicy(Qt::StrongFocus);
@@ -1784,8 +1801,16 @@ index b3cadb8..d71a900 100644
 +
 +void wxQtGLWidget::HandleTouch(QTouchEvent* event)
 +{
-+    event->accept();
++    // setAccepted(), not accept(): only the virtual one accepts each point. A finger pressed while another is
++    // down that is left unaccepted is taken away from this widget by Qt, and the pinch never sees it.
++    event->setAccepted(true);
 +    const QList<QEventPoint>& points = event->points();
++    // Qt (6.8) remembers this widget as the target of a finger pressed while another is down only when it
++    // found this widget through the closest other active point; when that is a stale point elsewhere, the new
++    // finger is delivered here once and then dropped from every update. Claim it, as Qt does for TouchBegin.
++    for ( const QEventPoint& p : points )
++        if ( p.state() == QEventPoint::Pressed && !QMutableEventPoint::target(p) )
++            QMutableEventPoint::setTarget(const_cast<QEventPoint&>(p), this);
 +    QList<QPointF> down;
 +    QList<int> downIds;
 +    for ( const QEventPoint& p : points )
@@ -1898,7 +1923,7 @@ index b3cadb8..d71a900 100644
  void wxQtGLWidget::resizeEvent ( QResizeEvent * event )
  {
      QOpenGLWidget::resizeEvent(event);
-@@ -50,14 +417,24 @@ void wxQtGLWidget::paintEvent ( QPaintEvent * event )
+@@ -50,14 +427,24 @@ void wxQtGLWidget::paintEvent ( QPaintEvent * event )
  
  void wxQtGLWidget::resizeGL(int w, int h)
  {
@@ -1923,7 +1948,7 @@ index b3cadb8..d71a900 100644
  }
  
  // ----------------------------------------------------------------------------
-@@ -354,12 +731,14 @@ bool wxGLContext::SetCurrent(const wxGLCanvas& win) const
+@@ -354,12 +741,14 @@ bool wxGLContext::SetCurrent(const wxGLCanvas& win) const
      if (!m_glContext)
          const_cast<wxGLContext *>(this)->m_glContext = context;
  
@@ -1939,7 +1964,7 @@ index b3cadb8..d71a900 100644
  
      qglWidget->makeCurrent();
      return true;
-@@ -494,7 +873,14 @@ bool wxGLCanvas::Create(wxWindow *parent,
+@@ -494,7 +883,14 @@ bool wxGLCanvas::Create(wxWindow *parent,
  
  bool wxGLCanvas::SwapBuffers()
  {
