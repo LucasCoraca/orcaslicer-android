@@ -1501,10 +1501,10 @@ index faa1467..fb1507c 100644
 +}
 +#endif // wxUSE_PRIVATE_FONTS
 diff --git a/src/qt/glcanvas.cpp b/src/qt/glcanvas.cpp
-index b3cadb8..491a4b3 100644
+index b3cadb8..d71a900 100644
 --- a/src/qt/glcanvas.cpp
 +++ b/src/qt/glcanvas.cpp
-@@ -14,9 +14,16 @@
+@@ -14,9 +14,17 @@
  
  #include <QOpenGLContext>
  #include <QOpenGLWidget>
@@ -1515,13 +1515,14 @@ index b3cadb8..491a4b3 100644
 +#include <QtGui/QTouchEvent>
 +#include <QtGui/QMouseEvent>
 +#include <QtCore/QTimer>
++#include <QtCore/QElapsedTimer>
 +#include <deque>
 +#include <functional>
 +#include <cmath>
  
  wxGCC_WARNING_SUPPRESS(unused-parameter)
  
-@@ -28,16 +35,335 @@ public:
+@@ -28,16 +36,375 @@ public:
      {
          setFormat(format);
          setFocusPolicy(Qt::StrongFocus);
@@ -1599,10 +1600,15 @@ index b3cadb8..491a4b3 100644
 +    QTimer m_stepFallback; // a step that changed nothing on screen may not get a frame
 +
 +    // Mouse: dragging with the left button. Pending: finger down, not moved yet (tap, drag or long press).
++    // Held: held still past the long press delay; lifting it is a right click, a second finger a gesture.
 +    // Arming: a drag waiting for the hover to be rendered, so it grabs what is under the finger.
-+    enum class TouchMode { None, Pending, Arming, Mouse, Gesture, Done };
++    enum class TouchMode { None, Pending, Held, Arming, Mouse, Gesture, Done };
 +    void StartDrag();
++    void ArmDrag(const QPointF& pos);
++    void RightClick(const QPointF& pos);
 +    QPointF m_touchStart;
++    QElapsedTimer m_touchTime;
++    int m_idA = -1, m_idB = -1; // the two fingers of a gesture, followed by id: Qt's point order can change
 +    bool m_liftedWhileArming = false;
 +    QTimer m_longPress;
 +    TouchMode m_touchMode = TouchMode::None;
@@ -1658,18 +1664,37 @@ index b3cadb8..491a4b3 100644
 +
 +void wxQtGLWidget::LongPress()
 +{
-+    // a finger held still: the right click that opens context menus on the desktop
-+    if ( m_touchMode != TouchMode::Pending )
-+        return;
-+    m_touchMode = TouchMode::Done;
-+    const QPointF pos = m_touchStart;
++    // A finger held still: the right click that opens context menus on the desktop. It is sent when the
++    // finger lifts (as Windows does), so a second finger that comes late still makes a pinch, not a menu.
++    if ( m_touchMode == TouchMode::Pending )
++        m_touchMode = TouchMode::Held;
++}
++
++void wxQtGLWidget::RightClick(const QPointF& pos)
++{
 +    auto right = [this, pos](QEvent::Type type, Qt::MouseButtons buttons) {
 +        QMouseEvent me(type, pos, pos, mapToGlobal(pos), Qt::RightButton, buttons, Qt::NoModifier);
 +        GetHandler()->QtHandleMouseEvent(this, &me);
 +    };
 +    QueueSteps({ [this, pos] { SendMouse(QEvent::MouseMove, pos, Qt::NoButton); },
 +                 [right] { right(QEvent::MouseButtonPress, Qt::RightButton); },
-+                 [right] { right(QEvent::MouseButtonRelease, Qt::NoButton); } });
++                 [this, right] { right(QEvent::MouseButtonRelease, Qt::NoButton); SendLeave(); } });
++}
++
++void wxQtGLWidget::ArmDrag(const QPointF& pos)
++{
++    m_longPress.stop();
++    m_touchMode = TouchMode::Arming;
++    m_liftedWhileArming = false;
++    m_lastMousePos = pos;
++    // A drag waits a moment, so that the second finger of a pinch landing just after the first does not
++    // orbit the view or move the object first; then a frame, so the hover sent at touch down finds what is
++    // under the finger.
++    const qint64 wait = std::max<qint64>(0, 90 - m_touchTime.elapsed());
++    QTimer::singleShot(wait, this, [this] {
++        if ( m_touchMode == TouchMode::Arming )
++            QueueSteps({ [this] { StartDrag(); } });
++    });
 +}
 +
 +void wxQtGLWidget::QueueSteps(std::initializer_list<std::function<void()>> steps)
@@ -1762,9 +1787,13 @@ index b3cadb8..491a4b3 100644
 +    event->accept();
 +    const QList<QEventPoint>& points = event->points();
 +    QList<QPointF> down;
++    QList<int> downIds;
 +    for ( const QEventPoint& p : points )
 +        if ( p.state() != QEventPoint::Released )
++        {
 +            down.push_back(p.position());
++            downIds.push_back(p.id());
++        }
 +
 +    const bool finished = event->type() == QEvent::TouchEnd || event->type() == QEvent::TouchCancel;
 +    if ( event->type() == QEvent::TouchBegin )
@@ -1777,9 +1806,21 @@ index b3cadb8..491a4b3 100644
 +            SendMouse(QEvent::MouseButtonRelease, m_lastMousePos, Qt::NoButton); // end the one-finger drag
 +        if ( m_touchMode == TouchMode::Arming )
 +            m_touchMode = TouchMode::Done; // the second finger came first: a gesture, not a drag
-+        const bool start = m_touchMode != TouchMode::Gesture;
++        bool start = m_touchMode != TouchMode::Gesture;
++        int a = downIds.indexOf(m_idA), b = downIds.indexOf(m_idB);
++        if ( start || a < 0 || b < 0 )
++        {
++            // a new pair of fingers (or one of them was replaced): measure from here
++            a = 0;
++            b = 1;
++            m_idA = downIds[0];
++            m_idB = downIds[1];
++            start = true;
++        }
++        if ( start && m_touchMode == TouchMode::Gesture )
++            SendGestures(m_lastA, m_lastB, false, true); // end the previous pair's gesture
 +        m_touchMode = TouchMode::Gesture;
-+        SendGestures(down[0], down[1], start, false);
++        SendGestures(down[a], down[b], start, false);
 +        return;
 +    }
 +
@@ -1795,24 +1836,24 @@ index b3cadb8..491a4b3 100644
 +        m_touchMode = TouchMode::Pending;
 +        m_touchStart = down[0];
 +        m_lastMousePos = down[0];
++        m_touchTime.start();
 +        // Hover where the finger is: 3D scenes find the object under the pointer while rendering, so it is
 +        // known by the time a tap or long press acts on it.
 +        SendMouse(QEvent::MouseMove, m_touchStart, Qt::NoButton);
 +        m_longPress.start();
 +    }
-+    else if ( m_touchMode == TouchMode::Pending && !finished && down.size() == 1 )
++    else if ( (m_touchMode == TouchMode::Pending || m_touchMode == TouchMode::Held) && !finished && down.size() == 1 )
 +    {
 +        // a drag starts once the finger has clearly moved
 +        const QPointF moved = down[0] - m_touchStart;
 +        if ( std::hypot(moved.x(), moved.y()) > 8.0 )
-+        {
-+            m_longPress.stop();
-+            m_touchMode = TouchMode::Arming;
-+            m_liftedWhileArming = false;
-+            m_lastMousePos = down[0];
-+            // the hover sent when the finger went down needs a frame to find what is under it
-+            QueueSteps({ [this] { StartDrag(); } });
-+        }
++            ArmDrag(down[0]);
++    }
++    else if ( m_touchMode == TouchMode::Held && finished )
++    {
++        m_touchMode = TouchMode::None;
++        RightClick(m_touchStart);
++        return;
 +    }
 +    else if ( m_touchMode == TouchMode::Arming && !finished && down.size() == 1 )
 +    {
@@ -1857,7 +1898,7 @@ index b3cadb8..491a4b3 100644
  void wxQtGLWidget::resizeEvent ( QResizeEvent * event )
  {
      QOpenGLWidget::resizeEvent(event);
-@@ -50,14 +376,24 @@ void wxQtGLWidget::paintEvent ( QPaintEvent * event )
+@@ -50,14 +417,24 @@ void wxQtGLWidget::paintEvent ( QPaintEvent * event )
  
  void wxQtGLWidget::resizeGL(int w, int h)
  {
@@ -1882,7 +1923,7 @@ index b3cadb8..491a4b3 100644
  }
  
  // ----------------------------------------------------------------------------
-@@ -354,12 +690,14 @@ bool wxGLContext::SetCurrent(const wxGLCanvas& win) const
+@@ -354,12 +731,14 @@ bool wxGLContext::SetCurrent(const wxGLCanvas& win) const
      if (!m_glContext)
          const_cast<wxGLContext *>(this)->m_glContext = context;
  
@@ -1898,7 +1939,7 @@ index b3cadb8..491a4b3 100644
  
      qglWidget->makeCurrent();
      return true;
-@@ -494,7 +832,14 @@ bool wxGLCanvas::Create(wxWindow *parent,
+@@ -494,7 +873,14 @@ bool wxGLCanvas::Create(wxWindow *parent,
  
  bool wxGLCanvas::SwapBuffers()
  {
