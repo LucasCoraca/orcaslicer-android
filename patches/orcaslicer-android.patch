@@ -9029,6 +9029,45 @@ index bad07274..89dd4a9b 100644
  
  
      wxBitmap maximize_bitmap;
+diff --git a/src/slic3r/GUI/Camera.cpp b/src/slic3r/GUI/Camera.cpp
+index ff975054..2110bdc2 100644
+--- a/src/slic3r/GUI/Camera.cpp
++++ b/src/slic3r/GUI/Camera.cpp
+@@ -699,6 +699,19 @@ void Camera::load_camera_view(Camera& cam)
+     m_zenit = cam.get_zenit();
+ }
+ 
++void Camera::set_external(const Transform3d& view, const Matrix4d& projection, int w, int h, double near_z, double far_z)
++{
++    m_type = EType::Perspective;
++    m_view_matrix = view;
++    m_view_rotation = Eigen::Quaterniond(view.matrix().block<3, 3>(0, 0));
++    m_projection_matrix.matrix() = projection;
++    m_viewport = { 0, 0, w, h };
++    m_frustrum_zs = { near_z, far_z };
++    // what turns about the target / orbits keeps meaning: the point a scene unit ahead
++    m_target = get_position() + get_dir_forward();
++    m_distance = 1.0;
++}
++
+ void Camera::look_at(const Vec3d& position, const Vec3d& target, const Vec3d& up)
+ {
+     const Vec3d unit_z = (position - target).normalized();
+diff --git a/src/slic3r/GUI/Camera.hpp b/src/slic3r/GUI/Camera.hpp
+index 5e8d6781..832ad736 100644
+--- a/src/slic3r/GUI/Camera.hpp
++++ b/src/slic3r/GUI/Camera.hpp
+@@ -184,6 +184,10 @@ public:
+ 
+     void look_at(const Vec3d& position, const Vec3d& target, const Vec3d& up);
+ 
++    // A camera given from outside: a headset's eye or a controller's ray (OrcaSlicer XR). Perspective, the view and
++    // projection as given (scene units), the viewport w x h.
++    void set_external(const Transform3d& view, const Matrix4d& projection, int w, int h, double near_z, double far_z);
++
+     double max_zoom() const { return 250.0; }
+     double min_zoom() const { return 0.2 * calc_zoom_to_bounding_box_factor(m_scene_box); }
+ 
 diff --git a/src/slic3r/GUI/ColorPickerDialog.cpp b/src/slic3r/GUI/ColorPickerDialog.cpp
 index 086eae3a..ca42abf5 100644
 --- a/src/slic3r/GUI/ColorPickerDialog.cpp
@@ -9110,7 +9149,7 @@ index c07b063c..83b27535 100644
  
      // IDEX/IQEX: everything render_scene() needs to place the secondary carriage markers and the
 diff --git a/src/slic3r/GUI/GLCanvas3D.cpp b/src/slic3r/GUI/GLCanvas3D.cpp
-index 95944a8d..4586ec57 100644
+index 95944a8d..6e633dc8 100644
 --- a/src/slic3r/GUI/GLCanvas3D.cpp
 +++ b/src/slic3r/GUI/GLCanvas3D.cpp
 @@ -236,12 +236,12 @@ static void pan_camera(Camera& camera, const Vec2d& screen_delta, const Vec3d& a
@@ -9129,7 +9168,15 @@ index 95944a8d..4586ec57 100644
  
  // Fixed the collision between BuildVolume_Type::Convex and macro Convex defined inside /usr/include/X11/X.h that is included by WxWidgets 3.0.
  #if defined(__linux__) && defined(Convex)
-@@ -1718,8 +1718,10 @@ bool GLCanvas3D::init()
+@@ -1517,6 +1517,7 @@ const double GLCanvas3D::DefaultCameraZoomToBedMarginFactor = 2.00;
+ const double GLCanvas3D::DefaultCameraZoomToPlateMarginFactor = 1.25;
+ // Main-thread only: _render_frame never runs off it, so no atomic is needed.
+ int GLCanvas3D::s_frames_in_progress = 0;
++bool GLCanvas3D::s_xr_room_event = false;
+ 
+ void GLCanvas3D::load_arrange_settings()
+ {
+@@ -1718,8 +1719,10 @@ bool GLCanvas3D::init()
      glsafe(::glEnable(GL_BLEND));
      glsafe(::glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
  
@@ -9140,7 +9187,7 @@ index 95944a8d..4586ec57 100644
  
      BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": before m_layers_editing init";
      if (m_main_toolbar.is_enabled())
-@@ -2499,6 +2501,9 @@ void GLCanvas3D::_render_frame(bool scene_dirty, bool only_init)
+@@ -2499,6 +2502,9 @@ void GLCanvas3D::_render_frame(bool scene_dirty, bool only_init)
      if (!_is_shown_on_screen() || !_set_current() || !wxGetApp().init_opengl())
          return;
  
@@ -9150,7 +9197,50 @@ index 95944a8d..4586ec57 100644
      if (!is_initialized() && !init())
          return;
  
-@@ -4631,7 +4636,22 @@ void GLCanvas3D::on_gesture(wxGestureEvent &evt)
+@@ -2563,7 +2569,7 @@ void GLCanvas3D::_render_frame(bool scene_dirty, bool only_init)
+     if (_update_inactive_plates_visibility())
+         scene_dirty = true;
+ 
+-    if (m_picking_enabled && !m_benchmarking) {
++    if (m_picking_enabled && !m_benchmarking && !m_xr_pointer) {
+         if (m_rectangle_selection.is_dragging())
+             // picking pass using rectangle selection
+             _rectangular_selection_picking_pass();
+@@ -2766,11 +2772,13 @@ void GLCanvas3D::_render_scene(const Camera& camera, const Size& cnv_size)
+ {
+     // Recorded by PartPlate::render_icons() below, when it runs.
+     wxGetApp().plater()->get_partplate_list().clear_hover_tooltip();
+-    glsafe(::glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
++    if (!m_xr_eye)
++        glsafe(::glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+     // Invalidate the shadow map each frame; the View3D and Preview paths below rebuild it. This
+     // keeps the Assemble canvas from sampling a stale map with an outdated light matrix.
+     m_shadow_map_valid = false;
+-    _render_background();
++    if (!m_xr_eye)
++        _render_background();
+ 
+     //BBS add partplater rendering logic
+     bool only_current = false, only_body = false;
+@@ -2878,10 +2886,16 @@ void GLCanvas3D::_render_scene(const Camera& camera, const Size& cnv_size)
+     _render_camera_target();
+ #endif // ENABLE_SHOW_CAMERA_TARGET
+ 
+-    if (m_picking_enabled && m_rectangle_selection.is_dragging())
++    if (m_picking_enabled && m_rectangle_selection.is_dragging() && !m_xr_eye)
+         m_rectangle_selection.render(*this);
+     m_frame_profiler.mark("gizmos");
+ 
++    if (m_xr_eye) {
++        // a headset's eye: the screen-space passes and the screen's scene cache are the canvas'
++        m_center_of_mass.render(*this);
++        return;
++    }
++
+     if (_is_ssao_enabled()) {
+         _render_ssao_pass(static_cast<unsigned int>(cnv_size.get_width()), static_cast<unsigned int>(cnv_size.get_height()));
+         m_frame_profiler.mark("ssao");
+@@ -4631,7 +4645,22 @@ void GLCanvas3D::on_gesture(wxGestureEvent &evt)
          static float zoom_start = 1;
          if (evt.IsGestureStart())
              zoom_start = camera.get_zoom();
@@ -9158,7 +9248,7 @@ index 95944a8d..4586ec57 100644
 +        // Orca Android: a pinch zooms toward the fingers, as on any touch screen. Zooming scales the view
 +        // about its centre; then pan the point under the fingers (the pan gesture's anchor) back below them.
 +        const double old_zoom = camera.get_zoom();
-+        camera.set_zoom(zoom_start * static_cast<wxZoomGestureEvent&>(evt).GetZoomFactor());
+         camera.set_zoom(zoom_start * static_cast<wxZoomGestureEvent&>(evt).GetZoomFactor());
 +        const double k = camera.get_zoom() / old_zoom;
 +        const auto& viewport = camera.get_viewport();
 +        const auto p = evt.GetPosition();
@@ -9168,12 +9258,193 @@ index 95944a8d..4586ec57 100644
 +        if (m_gesture_pan_anchor.has_value() && std::abs(k - 1.0) > EPSILON)
 +            pan_camera(camera, (1.0 - k) * from_centre, *m_gesture_pan_anchor);
 +#else
-         camera.set_zoom(zoom_start * static_cast<wxZoomGestureEvent&>(evt).GetZoomFactor());
++        camera.set_zoom(zoom_start * static_cast<wxZoomGestureEvent&>(evt).GetZoomFactor());
 +#endif
      } else if (evt.GetEventType() == wxEVT_GESTURE_ROTATE) {
          // Orca: Rotation starts a different navigation operation, so a previous pan anchor
          // must not be reused; rotation and pan fallbacks share the same navigation pivot.
-@@ -7159,7 +7179,7 @@ void GLCanvas3D::render_thumbnail_framebuffer(ThumbnailData& thumbnail_data, uns
+@@ -4652,6 +4681,142 @@ void GLCanvas3D::on_gesture(wxGestureEvent &evt)
+     m_dirty = true;
+ }
+ 
++// ---- OrcaSlicer XR
++
++void GLCanvas3D::xr_render_eye(const Transform3d& view, const Matrix4d& projection, int w, int h, double near_z, double far_z)
++{
++    if (!m_initialized || m_in_render || m_xr_eye || m_canvas == nullptr || w <= 0 || h <= 0)
++        return;
++    Camera& camera = wxGetApp().plater()->get_camera();
++    const Camera saved = camera;
++    camera.set_external(view, projection, w, h, near_z, far_z);
++    m_xr_eye = true;
++    Slic3r::ScopeGuard restore([this, &camera, &saved]() { m_xr_eye = false; camera = saved; });
++    // the eye's framebuffer is what passes that draw elsewhere (shadow maps) return to
++    OpenGLManager::capture_default_framebuffer();
++    glsafe(::glViewport(0, 0, w, h));
++    _render_scene(camera, Size(w, h, get_scale()));
++}
++
++Camera GLCanvas3D::xr_ray_camera(const Vec3d& origin, const Vec3d& dir, Vec2d* mouse) const
++{
++    const Size& cnv_size = get_canvas_size();
++    const int w = std::max(10, cnv_size.get_width()), h = std::max(10, cnv_size.get_height());
++    // 90 degrees tall (about h / 90 pixels a degree): a drag stays well inside it
++    const double t = std::tan(0.25 * M_PI), aspect = double(w) / double(h), near_z = 1.0, far_z = 1.0e6;
++    const Vec3d d = dir.normalized();
++    // looking down the ray, up as close to +Z as it gets
++    Vec3d z = -d, up = std::abs(d.z()) > 0.99 ? Vec3d::UnitY() : Vec3d::UnitZ();
++    Vec3d x = up.cross(z).normalized(), y = z.cross(x);
++    Matrix3d r0; r0.col(0) = x; r0.col(1) = y; r0.col(2) = z;
++    Eigen::Quaterniond rot(r0);
++    Vec2d m(0.5 * w, 0.5 * h);
++    if (m_xr_pressed) {
++        // a drag: the mouse moves by how far the ray turned since the press (as seen by the press' camera), and the camera
++        // at the ray now is turned so that the line of sight through that pixel is the ray
++        const Vec3d v = m_xr_press_rot.conjugate() * d;
++        if (v.z() < -1e-3) {
++            m = Vec2d(0.5 * w * (1.0 + v.x() / -v.z() / (t * aspect)), 0.5 * h * (1.0 - v.y() / -v.z() / t));
++            const Vec3d through = Vec3d((m.x() / w * 2.0 - 1.0) * t * aspect, (1.0 - m.y() / h * 2.0) * t, -1.0).normalized();
++            rot = rot * Eigen::Quaterniond::FromTwoVectors(through, -Vec3d::UnitZ());
++        }
++    }
++    Transform3d view = Transform3d::Identity();
++    view.linear() = rot.conjugate().toRotationMatrix();
++    view.translation() = -(view.linear() * origin);
++    Matrix4d proj = Matrix4d::Zero();
++    proj(0, 0) = 1.0 / (t * aspect); proj(1, 1) = 1.0 / t;
++    proj(2, 2) = -(far_z + near_z) / (far_z - near_z); proj(2, 3) = -2.0 * far_z * near_z / (far_z - near_z); proj(3, 2) = -1.0;
++    Camera c = wxGetApp().plater()->get_camera();
++    c.set_external(view, proj, w, h, near_z, far_z);
++    if (mouse != nullptr)
++        *mouse = m;
++    return c;
++}
++
++double GLCanvas3D::xr_hit(const Vec3d& origin, const Vec3d& dir)
++{
++    if (!m_initialized)
++        return -1.0;
++    Vec2d m;
++    const bool pressed = m_xr_pressed;
++    m_xr_pressed = false;
++    const Camera c = xr_ray_camera(origin, dir, &m);
++    m_xr_pressed = pressed;
++    const ClippingPlane clipping_plane = get_raycaster_clipping_plane();
++    const SceneRaycaster::HitResult hit = m_scene_raycaster.hit(m, c, &clipping_plane);
++    return hit.is_valid() ? (hit.position.cast<double>() - origin).norm() : -1.0;
++}
++
++void GLCanvas3D::xr_pointer(int action, const Vec3d& origin, const Vec3d& dir)
++{
++    if (!m_initialized || m_canvas == nullptr || !_set_current())
++        return;
++    if (action == 4 || action == 6) {
++        // the ray left the scene (or two hands took over): the screen's mouse again
++        if (m_xr_pressed && action == 6) {
++            m_xr_pressed = false;
++            mouse_up_cleanup();
++            m_mouse.set_start_position_2D_as_invalid();
++            m_mouse.set_start_position_3D_as_invalid();
++        }
++        if (!m_xr_pointer || m_xr_pressed)
++            return;
++        m_xr_pointer = false;
++        m_mouse.position = Vec2d(-1.0, -1.0);
++        m_hover_volume_idxs.clear();
++        m_hover_plate_idxs.clear();
++        wxGetApp().plater()->get_partplate_list().reset_hover_id();
++        m_gizmos.set_hover_id(-1);
++        _update_volumes_hover_state();
++        m_dirty = true;
++        return;
++    }
++    Vec2d mouse;
++    const Camera ray = xr_ray_camera(origin, dir, &mouse);
++    if (action == 0) {
++        m_xr_pressed = true;
++        m_xr_press_dir = dir.normalized();
++        m_xr_press_rot = Eigen::Quaterniond(ray.get_view_matrix().linear().transpose());
++    }
++    if (!m_xr_pointer && GImGui != nullptr)
++        ImGui::GetIO().MousePos = ImVec2(-FLT_MAX, -FLT_MAX);   // the overlays lose the screen's mouse
++    m_xr_pointer = true;
++    m_xr_ray_camera = ray;
++
++    Camera& camera = wxGetApp().plater()->get_camera();
++    const Camera saved = camera;
++    camera = ray;
++    s_xr_room_event = true;
++    Slic3r::ScopeGuard restore([&camera, &saved]() { s_xr_room_event = false; camera = saved; });
++    m_mouse.position = mouse;
++    if (action == 0 || action == 3)
++        _picking_pass();
++#if ENABLE_RETINA_GL
++    const double scale = m_retina_helper->get_scale_factor();
++#else
++    const double scale = 1.0;
++#endif
++    auto send = [this, &mouse, scale](wxEventType type, bool left, bool right) {
++        wxMouseEvent evt(type);
++        evt.SetEventObject(m_canvas);
++        evt.SetX(int(std::lround(mouse.x() / scale)));
++        evt.SetY(int(std::lround(mouse.y() / scale)));
++        evt.SetLeftDown(left);
++        evt.SetRightDown(right);
++        on_mouse(evt);
++    };
++    switch (action) {
++    case 0: send(wxEVT_LEFT_DOWN, true, false); break;
++    case 1: send(wxEVT_MOTION, true, false); break;
++    case 2: send(wxEVT_LEFT_UP, false, false); m_xr_pressed = false; break;
++    case 3: send(wxEVT_MOTION, false, false); break;
++    case 5: send(wxEVT_RIGHT_DOWN, false, true); send(wxEVT_RIGHT_UP, false, false); break;
++    default: break;
++    }
++    m_dirty = true;
++}
++
+ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
+ {
+     if (!m_initialized || !_set_current())
+@@ -4697,7 +4862,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
+     // that incorrectly suppresses the active drag's tooltip and can interrupt its processing. The active drag always takes priority.
+     const bool other_drag_active = m_gizmos.is_dragging() || m_mouse.dragging || m_rectangle_selection.is_dragging() || m_layers_editing.state == LayersEditing::Editing;
+ 
+-    if (imgui->update_mouse_data(evt) && !other_drag_active) {
++    if (!s_xr_room_event && imgui->update_mouse_data(evt) && !other_drag_active) {
+         if ((evt.LeftDown() || (evt.Moving() && (evt.AltDown() || evt.ShiftDown()))) && m_canvas != nullptr)
+             m_canvas->SetFocus();
+         m_mouse.position = evt.Leaving() ? Vec2d(-1.0, -1.0) : pos.cast<double>();
+@@ -4776,9 +4941,9 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
+     }
+     const int selected_object_idx      = m_selection.get_object_idx();
+     const int layer_editing_object_idx = is_layers_editing_enabled() ? selected_object_idx : -1;
+-    const bool mouse_in_layer_editing  = layer_editing_object_idx != -1 && m_layers_editing.bar_rect_contains(*this, pos(0), pos(1));
++    const bool mouse_in_layer_editing  = layer_editing_object_idx != -1 && !s_xr_room_event && m_layers_editing.bar_rect_contains(*this, pos(0), pos(1));
+ 
+-    if (!mouse_in_layer_editing && m_main_toolbar.on_mouse(evt, *this)) {
++    if (!mouse_in_layer_editing && !s_xr_room_event && m_main_toolbar.on_mouse(evt, *this)) {
+         if (m_main_toolbar.is_any_item_pressed())
+             m_gizmos.reset_all_states();
+         if (evt.LeftUp() || evt.MiddleUp() || evt.RightUp())
+@@ -4788,14 +4953,14 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
+     }
+ 
+     //BBS: GUI refactor: GLToolbar
+-    if (!mouse_in_layer_editing && m_assemble_view_toolbar.on_mouse(evt, *this)) {
++    if (!mouse_in_layer_editing && !s_xr_room_event && m_assemble_view_toolbar.on_mouse(evt, *this)) {
+         if (evt.LeftUp() || evt.MiddleUp() || evt.RightUp())
+             mouse_up_cleanup();
+         m_mouse.set_start_position_3D_as_invalid();
+         return;
+     }
+ 
+-    if (!mouse_in_layer_editing && collapse_toolbar().on_mouse(evt, *this)) {
++    if (!mouse_in_layer_editing && !s_xr_room_event && collapse_toolbar().on_mouse(evt, *this)) {
+         if (evt.LeftUp() || evt.MiddleUp() || evt.RightUp())
+             mouse_up_cleanup();
+         m_mouse.set_start_position_3D_as_invalid();
+@@ -7159,7 +7324,7 @@ void GLCanvas3D::render_thumbnail_framebuffer(ThumbnailData& thumbnail_data, uns
          BOOST_LOG_TRIVIAL(info) << boost::format("render_thumbnail prepare: GL_FRAMEBUFFER not complete");
      }
  
@@ -9182,7 +9453,7 @@ index 95944a8d..4586ec57 100644
      glsafe(::glDeleteRenderbuffers(1, &render_depth));
      if (render_tex_buffer != 0)
          glsafe(::glDeleteRenderbuffers(1, &render_tex_buffer));
-@@ -8288,9 +8308,11 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
+@@ -8288,9 +8453,11 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
              }
          }
  
@@ -9194,7 +9465,7 @@ index 95944a8d..4586ec57 100644
  
          glsafe(::glDisable(GL_BLEND));
          glsafe(::glEnable(GL_DEPTH_TEST));
-@@ -8333,8 +8355,10 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
+@@ -8333,8 +8500,10 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
          //BBS: remove the bed picking logic
          //_render_bed_for_picking(!wxGetApp().plater()->get_camera().is_looking_downward());
  
@@ -9205,7 +9476,7 @@ index 95944a8d..4586ec57 100644
  
          const size_t px_count = width * height;
  
-@@ -8387,7 +8411,7 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
+@@ -8387,7 +8556,7 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
                  main_camera.apply_viewport();
  
              if (framebuffers_type == OpenGLManager::EFramebufferType::Arb) {
@@ -9214,7 +9485,7 @@ index 95944a8d..4586ec57 100644
                  if (render_depth != 0)
                      glsafe(::glDeleteRenderbuffers(1, &render_depth));
                  if (render_fbo != 0)
-@@ -8548,8 +8572,8 @@ void GLCanvas3D::_render_fps_overlay(int fps) const
+@@ -8548,8 +8717,8 @@ void GLCanvas3D::_render_fps_overlay(int fps) const
          pos = ImVec2(legend->Pos.x - margin, legend->Pos.y);
      // The toolbar row can reach the corner on a narrow canvas; stack the overlay below it then.
      else if (m_main_toolbar.is_enabled() &&
@@ -9225,7 +9496,7 @@ index 95944a8d..4586ec57 100644
      ImGui::SetNextWindowPos(pos, ImGuiCond_Always, ImVec2(1.0f, 0.0f));
      ImGui::SetNextWindowBgAlpha(0.35f);
      ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f * get_scale());
-@@ -9880,9 +9904,20 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
+@@ -9880,9 +10049,20 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
      //BBS: GUI refactor: GLToolbar
  #if BBS_TOOLBAR_ON_TOP
      float collapse_toolbar_width = collapse_toolbar.is_enabled() ? collapse_toolbar.get_width() : 0;
@@ -9248,7 +9519,7 @@ index 95944a8d..4586ec57 100644
      float noitems_width = top_tb_width - size * items_cnt; // width of separators and borders in top toolbars
  
      // calculate scale needed for items in all top toolbars
-@@ -9895,6 +9930,15 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
+@@ -9895,6 +10075,15 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
  
      //use the same value as horizon
      float new_v_scale = new_h_scale;
@@ -9264,7 +9535,7 @@ index 95944a8d..4586ec57 100644
  #else
      float top_tb_width = = collapse_toolbar.get_width();
      int   items_cnt = collapse_toolbar.get_visible_items_cnt();
-@@ -10168,7 +10212,7 @@ int GLCanvas3D::get_main_toolbar_offset() const
+@@ -10168,7 +10357,7 @@ int GLCanvas3D::get_main_toolbar_offset() const
  {
      const float cnv_width              = get_canvas_size().get_width();
      const float collapse_toolbar_width = get_collapse_toolbar_width() * 2;
@@ -9273,7 +9544,7 @@ index 95944a8d..4586ec57 100644
      const float assemble_width         = m_assemble_view_toolbar.get_width();
      const float separator_width        = m_separator_toolbar.get_width();
      const float toolbar_total_width    = m_main_toolbar.get_width() + separator_width + gizmo_width + assemble_width + collapse_toolbar_width;
-@@ -10685,7 +10729,7 @@ void GLCanvas3D::_render_plate_switcher()
+@@ -10685,7 +10874,7 @@ void GLCanvas3D::_render_plate_switcher()
      const float   spacing   = 8.f * sc;
      const float   rounding  = 4.f * sc;
      const float   scrollbar = PLATE_TOOLBAR_SCROLLBAR * sc;
@@ -9282,7 +9553,7 @@ index 95944a8d..4586ec57 100644
      const float   content_h = plate_count * (btn_size.y + spacing) - spacing + 2.f * padding.y;
      const float   max_h     = std::max(btn_size.y + 2.f * padding.y, float(get_canvas_size().get_height()) - top - (canvas_corner_height() + CANVAS_TOOLBAR_MARGIN) * sc);
      // As in the Preview plate toolbar, the scrollbar shows only while the mouse is over the column.
-@@ -10758,7 +10802,7 @@ void GLCanvas3D::_render_assemble_view_toolbar() const
+@@ -10758,7 +10947,7 @@ void GLCanvas3D::_render_assemble_view_toolbar() const
          return;
  
      const Size cnv_size = get_canvas_size();
@@ -9291,7 +9562,7 @@ index 95944a8d..4586ec57 100644
      const float separator_width = m_separator_toolbar.get_width();
      const float top = 0.5f * (float)cnv_size.get_height();
      const float main_toolbar_left = -0.5f * cnv_size.get_width() + get_main_toolbar_offset();
-@@ -11186,7 +11230,7 @@ void GLCanvas3D::_render_separator_toolbar_right() const
+@@ -11186,7 +11375,7 @@ void GLCanvas3D::_render_separator_toolbar_right() const
          return;
  
      const Size cnv_size = get_canvas_size();
@@ -9301,7 +9572,7 @@ index 95944a8d..4586ec57 100644
      const float top = 0.5f * (float)cnv_size.get_height();
      const float main_toolbar_left = -0.5f * cnv_size.get_width() + get_main_toolbar_offset();
 diff --git a/src/slic3r/GUI/GLCanvas3D.hpp b/src/slic3r/GUI/GLCanvas3D.hpp
-index e4838598..c8c8142a 100644
+index e4838598..1dca84e6 100644
 --- a/src/slic3r/GUI/GLCanvas3D.hpp
 +++ b/src/slic3r/GUI/GLCanvas3D.hpp
 @@ -76,7 +76,7 @@ struct ImDrawData;
@@ -9313,7 +9584,23 @@ index e4838598..c8c8142a 100644
  
  namespace Slic3r {
  
-@@ -1135,6 +1135,9 @@ public:
+@@ -645,6 +645,15 @@ private:
+     bool m_in_render;
+     // How many canvases are inside _render_frame() right now - see is_frame_in_progress().
+     static int s_frames_in_progress;
++    // OrcaSlicer XR (see xr_render_eye / xr_pointer)
++    static bool s_xr_room_event;
++    bool m_xr_eye{ false };          // drawing for a headset's eye
++    bool m_xr_pointer{ false };      // a controller ray is the mouse (picking follows it, not the screen mouse)
++    Camera m_xr_ray_camera;          // the ray's camera of the last event
++    bool m_xr_pressed{ false };
++    Vec3d m_xr_press_dir;            // the ray's direction at the press (a drag moves the mouse by how it turned since)
++    Eigen::Quaterniond m_xr_press_rot;
++    Camera xr_ray_camera(const Vec3d& origin, const Vec3d& dir, Vec2d* mouse) const;
+     wxTimer m_timer;
+     wxTimer m_timer_set_color;
+     // Armed by each frame that draws the FPS overlay; its tick requests an overlay-only frame.
+@@ -1135,6 +1144,9 @@ public:
      //BBS: GUI refactor: GLToolbar&&gizmo
      int get_main_toolbar_offset() const;
      int get_main_toolbar_height() const { return m_main_toolbar.get_height(); }
@@ -9323,6 +9610,28 @@ index e4838598..c8c8142a 100644
      int get_main_toolbar_width() const { return m_main_toolbar.get_width(); }
      float get_assemble_view_toolbar_width() const { return m_assemble_view_toolbar.get_width(); }
      float get_assemble_view_toolbar_height() const { return m_assemble_view_toolbar.get_height(); }
+@@ -1154,6 +1166,21 @@ public:
+     bool has_mouse_capture() const;
+ 
+     void render(bool only_init = false);
++
++    // OrcaSlicer XR (a headset): the scene is also shown in the room, drawn by this canvas for each eye, and the
++    // controllers point into it.
++    // The 3D scene (no background, overlays or post processing) into the bound framebuffer, seen from `view` /
++    // `projection` (scene units), w x h pixels.
++    void xr_render_eye(const Transform3d& view, const Matrix4d& projection, int w, int h, double near_z, double far_z);
++    // A controller ray in the room (scene units) as this canvas' mouse: 0 press, 1 drag, 2 release, 3 hover, 4 the ray
++    // left the scene (back to the screen mouse), 5 right click, 6 cancel. The ray gets a camera of its own, looking down
++    // it, the mouse at its centre - so picking, selection, the gizmos and drags work in the room as with a mouse.
++    void xr_pointer(int action, const Vec3d& origin, const Vec3d& dir);
++    // Distance along a ray to what it hits (volumes, plates, gizmo grabbers), or a negative value.
++    double xr_hit(const Vec3d& origin, const Vec3d& dir);
++    bool xr_make_current() { return _set_current(); }
++    // While a controller event is handled, the overlays (toolbars, ImGui windows) do not take it: they are on the screen.
++    static bool xr_room_event() { return s_xr_room_event; }
+     bool is_rendering_enabled()
+     {
+         return m_enable_render;
 diff --git a/src/slic3r/GUI/GLModel.cpp b/src/slic3r/GUI/GLModel.cpp
 index 52526e0e..259ee55e 100644
 --- a/src/slic3r/GUI/GLModel.cpp
@@ -9546,7 +9855,7 @@ index e391022d..731eee9b 100644
          ++clipper_id;
      }
 diff --git a/src/slic3r/GUI/Gizmos/GLGizmosManager.cpp b/src/slic3r/GUI/Gizmos/GLGizmosManager.cpp
-index 31939161..f5243a62 100644
+index 31939161..6e5e7ce7 100644
 --- a/src/slic3r/GUI/Gizmos/GLGizmosManager.cpp
 +++ b/src/slic3r/GUI/Gizmos/GLGizmosManager.cpp
 @@ -130,6 +130,18 @@ GLGizmosManager::EType GLGizmosManager::get_gizmo_from_mouse(const Vec2d &mouse_
@@ -9568,6 +9877,15 @@ index 31939161..f5243a62 100644
      float top_y = 0;
      float stride_x = m_layout.scaled_stride_x();
  
+@@ -850,7 +862,7 @@ bool GLGizmosManager::on_mouse(const wxMouseEvent &mouse_event)
+     if (!m_enabled) return false;
+ 
+     // tool bar wants to use event?
+-    if (gizmos_toolbar_on_mouse(mouse_event)) return true;
++    if (!GLCanvas3D::xr_room_event() && gizmos_toolbar_on_mouse(mouse_event)) return true;   // (a controller in the room: not on the bar)
+ 
+     // current gizmo wants to use event?
+     if (m_current != Undefined &&
 @@ -1303,6 +1315,10 @@ void GLGizmosManager::do_render_overlay(bool draw_icons) const
          top_x = top_x * inv_cnv_w;
      }

@@ -814,10 +814,10 @@ index 0000000..db339fa
 +}
 diff --git a/src/qt/android/java/org/orcaport/wx/WebViewBridge.java b/src/qt/android/java/org/orcaport/wx/WebViewBridge.java
 new file mode 100644
-index 0000000..54c7770
+index 0000000..c9f1810
 --- /dev/null
 +++ b/src/qt/android/java/org/orcaport/wx/WebViewBridge.java
-@@ -0,0 +1,287 @@
+@@ -0,0 +1,291 @@
 +package org.orcaport.wx;
 +
 +import android.app.Activity;
@@ -873,6 +873,10 @@ index 0000000..54c7770
 +        return b;
 +    }
 +
++    /** Where the web views go: the view group holding the app's Qt windows. Null: the activity's content view. An app
++     *  showing its Qt windows elsewhere (OrcaSlicer XR: on a virtual display) sets it. */
++    public static volatile FrameLayout contentRoot;
++
 +    private WebViewBridge(Activity activity, long id) {
 +        this.activity = activity;
 +        this.id = id;
@@ -880,7 +884,7 @@ index 0000000..54c7770
 +
 +    private void init() {
 +        if (destroyed) return;
-+        web = new WebView(activity);
++        web = new WebView(contentRoot != null ? contentRoot.getContext() : activity);
 +        WebSettings s = web.getSettings();
 +        s.setJavaScriptEnabled(true);
 +        s.setDomStorageEnabled(true);
@@ -909,7 +913,7 @@ index 0000000..54c7770
 +        // Like every wxWebView backend, expose window.wx.postMessage() from the start; it raises
 +        // wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED with the handler name "wx" (Orca's pages rely on it).
 +        addMessageHandlerNow("wx");
-+        root = (FrameLayout) activity.getWindow().getDecorView().findViewById(android.R.id.content);
++        root = contentRoot != null ? contentRoot : (FrameLayout) activity.getWindow().getDecorView().findViewById(android.R.id.content);
 +        root.addView(web, lp);
 +        web.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
 +        nativeEvent(id, EV_CREATED, "", "", 0);

@@ -47,3 +47,10 @@ set_target_properties(orcaslicer PROPERTIES
     QT_ANDROID_APP_NAME "Orca Slicer"
     QT_ANDROID_VERSION_NAME "0.1.1-preview"
     QT_ANDROID_VERSION_CODE 2) # bump for every release, so Android installs it as an update
+
+# OrcaSlicer XR (github.com/LucasCoraca/orcaslicer-xr): the same app as a headset app, built alongside when its checkout
+# is given (-DORCA_XR_DIR=<checkout>; it adds the target orcaslicer_xr and its APK, orcaslicer_xr_make_apk).
+set(ORCA_XR_DIR "" CACHE PATH "OrcaSlicer XR checkout: also build the headset app")
+if (ORCA_XR_DIR)
+    add_subdirectory("${ORCA_XR_DIR}/android" "${CMAKE_BINARY_DIR}/xr-app")
+endif ()

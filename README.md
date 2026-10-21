@@ -35,6 +35,9 @@ This is not a rewrite or a "mobile companion". It is OrcaSlicer itself, compiled
 
 Demo videos: [tablet](docs/assets/demo-tablet.mp4) · [phone](docs/assets/demo-phone.mp4)
 
+In a headset: [OrcaSlicer XR](https://github.com/LucasCoraca/orcaslicer-xr) is this app on Meta Quest 3, with Orca's window
+in front of you and the plate in the room.
+
 ## Install
 
 1. Download `OrcaSlicer-android-arm64-preview.apk` from the [latest release](https://github.com/LucasCoraca/orcaslicer-android/releases/latest). Almost every phone and tablet since 2017 is arm64. The `x86_64` APK is for emulators and Chromebooks.
