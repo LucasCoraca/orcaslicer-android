@@ -45,8 +45,8 @@ set_target_properties(orcaslicer PROPERTIES
     QT_ANDROID_MIN_SDK_VERSION 28
     QT_ANDROID_TARGET_SDK_VERSION 34
     QT_ANDROID_APP_NAME "Orca Slicer"
-    QT_ANDROID_VERSION_NAME "0.1.1-preview"
-    QT_ANDROID_VERSION_CODE 2) # bump for every release, so Android installs it as an update
+    QT_ANDROID_VERSION_NAME "0.1.2-preview"
+    QT_ANDROID_VERSION_CODE 3) # bump for every release, so Android installs it as an update
 
 # OrcaSlicer XR (github.com/LucasCoraca/orcaslicer-xr): the same app as a headset app, built alongside when its checkout
 # is given (-DORCA_XR_DIR=<checkout>; it adds the target orcaslicer_xr and its APK, orcaslicer_xr_make_apk).

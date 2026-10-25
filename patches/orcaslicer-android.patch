@@ -3408,6 +3408,36 @@ index 00000000..dcc4ed59
 +
 +    gl_Position = projection_matrix * position;
 +}
+diff --git a/resources/web/dialog/SpeedDial/speeddial.js b/resources/web/dialog/SpeedDial/speeddial.js
+index 5ec47e91..7022306a 100644
+--- a/resources/web/dialog/SpeedDial/speeddial.js
++++ b/resources/web/dialog/SpeedDial/speeddial.js
+@@ -1,3 +1,6 @@
++// Touch-only screen (no mouse to hover or double-click with), e.g. Android tablets and phones.
++var touchOnly = typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(hover: none)").matches;
++
+ // Speed Dial launcher page. Static-safe module: no DOM access at load time so a
+ // node vm can exercise the pure helpers (searchActions / filterTabs / actionLabel / nextSel /
+ // commandList / commandSections / actionCategory / groupActions / favDigitFromEvent / spacerHeight).
+@@ -1030,7 +1033,8 @@ function renderActionRow(a, i) {
+     pin.ondblclick = function (ev) { ev.stopPropagation(); };
+     shell.row.appendChild(pin);
+ 
+-    shell.row.onclick = function () { sel = { zone: "list", i: i }; render({ resize: true }); };
++    // why: a touch screen has no double click to spare - a tap runs the row there (no hover to preview with)
++    shell.row.onclick = function () { sel = { zone: "list", i: i }; if (touchOnly) activateEntry(a); else render({ resize: true }); };
+     shell.row.ondblclick = function () { sel = { zone: "list", i: i }; activateEntry(a); };
+     return shell.row;
+ }
+@@ -1196,7 +1200,7 @@ function renderTabRow(t, i) {
+     var hint = tabAliasHint(t, query);
+     if (hint)
+         shell.line.appendChild(markedText("row-alias", hint.text, hint.ranges));
+-    shell.row.onclick = function () { sel = { zone: "list", i: i }; render({ resize: true }); };
++    shell.row.onclick = function () { sel = { zone: "list", i: i }; if (touchOnly) jumpToTab(t); else render({ resize: true }); };
+     shell.row.ondblclick = function () { sel = { zone: "list", i: i }; jumpToTab(t); };
+     return shell.row;
+ }
 diff --git a/resources/web/homepage/css/home.css b/resources/web/homepage/css/home.css
 index a90a8520..2dee910c 100644
 --- a/resources/web/homepage/css/home.css
@@ -9029,6 +9059,67 @@ index bad07274..89dd4a9b 100644
  
  
      wxBitmap maximize_bitmap;
+diff --git a/src/slic3r/GUI/CalibrationWizardPage.cpp b/src/slic3r/GUI/CalibrationWizardPage.cpp
+index 36c8ca20..39d4f2e7 100644
+--- a/src/slic3r/GUI/CalibrationWizardPage.cpp
++++ b/src/slic3r/GUI/CalibrationWizardPage.cpp
+@@ -474,7 +474,7 @@ CaliPageCaption::CaliPageCaption(wxWindow* parent, CalibMode cali_mode,
+         wxPostEvent(m_parent, event);
+         });
+ 
+-#ifdef __linux__
++#if defined(__linux__) && !defined(__ANDROID__) // GTK: Android also defines __linux__
+     wxGetApp().CallAfter([this, title_text]() {
+         title_text->SetMinSize(title_text->GetSize() + wxSize{ FromDIP(150), title_text->GetCharHeight() / 2 });
+         Layout();
+@@ -682,17 +682,23 @@ void PAPageHelpPanel::create_pop_window()
+         dc.DrawRectangle({ 0, 0 }, m_pop_win->GetSize());
+         });
+ 
+-    m_help_btn->Bind(wxEVT_ENTER_WINDOW, [this](auto&) {
++    auto show_popup = [this](auto&) {
+         wxPoint pop_pos = m_help_btn->ClientToScreen(wxPoint(0, 0));
+         pop_pos.x -= FromDIP(60);
+         pop_pos.y -= m_pop_win->GetSize().y + FromDIP(10);
+ 
+         m_pop_win->Position(pop_pos, wxSize(0, 0));
+         m_pop_win->Popup();
+-        });
++        };
++#ifdef __ANDROID__
++    // No hover on a touch screen: a tap shows the picture, the next tap anywhere dismisses it.
++    m_help_btn->Bind(wxEVT_BUTTON, show_popup);
++#else
++    m_help_btn->Bind(wxEVT_ENTER_WINDOW, show_popup);
+     m_help_btn->Bind(wxEVT_LEAVE_WINDOW, [this](auto&) {
+         m_pop_win->Dismiss();
+         });
++#endif
+ }
+ 
+ 
+diff --git a/src/slic3r/GUI/CalibrationWizardStartPage.cpp b/src/slic3r/GUI/CalibrationWizardStartPage.cpp
+index 6fcfbb0a..ff9655a1 100644
+--- a/src/slic3r/GUI/CalibrationWizardStartPage.cpp
++++ b/src/slic3r/GUI/CalibrationWizardStartPage.cpp
+@@ -136,7 +136,7 @@ void CalibrationPAStartPage::create_page(wxWindow* parent)
+ 
+     m_top_sizer->Add(m_action_panel, 0, wxEXPAND, 0);
+ 
+-#ifdef __linux__
++#if defined(__linux__) && !defined(__ANDROID__) // GTK: Android also defines __linux__
+     wxGetApp().CallAfter([this]() {
+         m_when_content->SetMinSize(m_when_content->GetSize() + wxSize{ 0, wxWindow::GetCharHeight() });
+         m_about_content->SetMinSize(m_about_content->GetSize() + wxSize{ 0, wxWindow::GetCharHeight() });
+@@ -276,7 +276,7 @@ void CalibrationFlowRateStartPage::create_page(wxWindow* parent)
+ 
+     m_top_sizer->Add(m_action_panel, 0, wxEXPAND, 0);
+ 
+-#ifdef __linux__
++#if defined(__linux__) && !defined(__ANDROID__) // GTK: Android also defines __linux__
+     wxGetApp().CallAfter([this, auto_cali_content, extra_text]() {
+         m_when_content->SetMinSize(m_when_content->GetSize() + wxSize{ 0, wxWindow::GetCharHeight() });
+         auto_cali_content->SetMinSize(auto_cali_content->GetSize() + wxSize{ 0, wxWindow::GetCharHeight() });
 diff --git a/src/slic3r/GUI/Camera.cpp b/src/slic3r/GUI/Camera.cpp
 index ff975054..2110bdc2 100644
 --- a/src/slic3r/GUI/Camera.cpp
@@ -9149,7 +9240,7 @@ index c07b063c..83b27535 100644
  
      // IDEX/IQEX: everything render_scene() needs to place the secondary carriage markers and the
 diff --git a/src/slic3r/GUI/GLCanvas3D.cpp b/src/slic3r/GUI/GLCanvas3D.cpp
-index 95944a8d..6e633dc8 100644
+index 95944a8d..1dc607b2 100644
 --- a/src/slic3r/GUI/GLCanvas3D.cpp
 +++ b/src/slic3r/GUI/GLCanvas3D.cpp
 @@ -236,12 +236,12 @@ static void pan_camera(Camera& camera, const Vec2d& screen_delta, const Vec3d& a
@@ -9206,7 +9297,18 @@ index 95944a8d..6e633dc8 100644
          if (m_rectangle_selection.is_dragging())
              // picking pass using rectangle selection
              _rectangular_selection_picking_pass();
-@@ -2766,11 +2772,13 @@ void GLCanvas3D::_render_scene(const Camera& camera, const Size& cnv_size)
+@@ -2730,6 +2736,10 @@ void GLCanvas3D::_render_frame(bool scene_dirty, bool only_init)
+ 
+     wxGetApp().imgui()->render(draw_data);
+     m_frame_profiler.mark("imgui draw");
++#ifdef __ANDROID__
++    // ImGui has no keyboard of its own: open the system one while one of its text fields is being edited.
++    m_canvas->QtShowSoftKeyboard(wxGetApp().imgui()->want_text_input());
++#endif
+ 
+     // On Wayland, eglSwapBuffers blocks when the canvas is hidden or
+     // occluded. Skip the swap to avoid stalling the render loop.
+@@ -2766,11 +2776,13 @@ void GLCanvas3D::_render_scene(const Camera& camera, const Size& cnv_size)
  {
      // Recorded by PartPlate::render_icons() below, when it runs.
      wxGetApp().plater()->get_partplate_list().clear_hover_tooltip();
@@ -9222,7 +9324,7 @@ index 95944a8d..6e633dc8 100644
  
      //BBS add partplater rendering logic
      bool only_current = false, only_body = false;
-@@ -2878,10 +2886,16 @@ void GLCanvas3D::_render_scene(const Camera& camera, const Size& cnv_size)
+@@ -2878,10 +2890,16 @@ void GLCanvas3D::_render_scene(const Camera& camera, const Size& cnv_size)
      _render_camera_target();
  #endif // ENABLE_SHOW_CAMERA_TARGET
  
@@ -9240,7 +9342,7 @@ index 95944a8d..6e633dc8 100644
      if (_is_ssao_enabled()) {
          _render_ssao_pass(static_cast<unsigned int>(cnv_size.get_width()), static_cast<unsigned int>(cnv_size.get_height()));
          m_frame_profiler.mark("ssao");
-@@ -4631,7 +4645,22 @@ void GLCanvas3D::on_gesture(wxGestureEvent &evt)
+@@ -4631,7 +4649,22 @@ void GLCanvas3D::on_gesture(wxGestureEvent &evt)
          static float zoom_start = 1;
          if (evt.IsGestureStart())
              zoom_start = camera.get_zoom();
@@ -9263,7 +9365,7 @@ index 95944a8d..6e633dc8 100644
      } else if (evt.GetEventType() == wxEVT_GESTURE_ROTATE) {
          // Orca: Rotation starts a different navigation operation, so a previous pan anchor
          // must not be reused; rotation and pan fallbacks share the same navigation pivot.
-@@ -4652,6 +4681,142 @@ void GLCanvas3D::on_gesture(wxGestureEvent &evt)
+@@ -4652,6 +4685,142 @@ void GLCanvas3D::on_gesture(wxGestureEvent &evt)
      m_dirty = true;
  }
  
@@ -9406,7 +9508,7 @@ index 95944a8d..6e633dc8 100644
  void GLCanvas3D::on_mouse(wxMouseEvent& evt)
  {
      if (!m_initialized || !_set_current())
-@@ -4697,7 +4862,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
+@@ -4697,7 +4866,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
      // that incorrectly suppresses the active drag's tooltip and can interrupt its processing. The active drag always takes priority.
      const bool other_drag_active = m_gizmos.is_dragging() || m_mouse.dragging || m_rectangle_selection.is_dragging() || m_layers_editing.state == LayersEditing::Editing;
  
@@ -9415,7 +9517,7 @@ index 95944a8d..6e633dc8 100644
          if ((evt.LeftDown() || (evt.Moving() && (evt.AltDown() || evt.ShiftDown()))) && m_canvas != nullptr)
              m_canvas->SetFocus();
          m_mouse.position = evt.Leaving() ? Vec2d(-1.0, -1.0) : pos.cast<double>();
-@@ -4776,9 +4941,9 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
+@@ -4776,9 +4945,9 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
      }
      const int selected_object_idx      = m_selection.get_object_idx();
      const int layer_editing_object_idx = is_layers_editing_enabled() ? selected_object_idx : -1;
@@ -9427,7 +9529,7 @@ index 95944a8d..6e633dc8 100644
          if (m_main_toolbar.is_any_item_pressed())
              m_gizmos.reset_all_states();
          if (evt.LeftUp() || evt.MiddleUp() || evt.RightUp())
-@@ -4788,14 +4953,14 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
+@@ -4788,14 +4957,14 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
      }
  
      //BBS: GUI refactor: GLToolbar
@@ -9444,7 +9546,7 @@ index 95944a8d..6e633dc8 100644
          if (evt.LeftUp() || evt.MiddleUp() || evt.RightUp())
              mouse_up_cleanup();
          m_mouse.set_start_position_3D_as_invalid();
-@@ -7159,7 +7324,7 @@ void GLCanvas3D::render_thumbnail_framebuffer(ThumbnailData& thumbnail_data, uns
+@@ -7159,7 +7328,7 @@ void GLCanvas3D::render_thumbnail_framebuffer(ThumbnailData& thumbnail_data, uns
          BOOST_LOG_TRIVIAL(info) << boost::format("render_thumbnail prepare: GL_FRAMEBUFFER not complete");
      }
  
@@ -9453,7 +9555,7 @@ index 95944a8d..6e633dc8 100644
      glsafe(::glDeleteRenderbuffers(1, &render_depth));
      if (render_tex_buffer != 0)
          glsafe(::glDeleteRenderbuffers(1, &render_tex_buffer));
-@@ -8288,9 +8453,11 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
+@@ -8288,9 +8457,11 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
              }
          }
  
@@ -9465,7 +9567,7 @@ index 95944a8d..6e633dc8 100644
  
          glsafe(::glDisable(GL_BLEND));
          glsafe(::glEnable(GL_DEPTH_TEST));
-@@ -8333,8 +8500,10 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
+@@ -8333,8 +8504,10 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
          //BBS: remove the bed picking logic
          //_render_bed_for_picking(!wxGetApp().plater()->get_camera().is_looking_downward());
  
@@ -9476,7 +9578,7 @@ index 95944a8d..6e633dc8 100644
  
          const size_t px_count = width * height;
  
-@@ -8387,7 +8556,7 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
+@@ -8387,7 +8560,7 @@ void GLCanvas3D::_rectangular_selection_picking_pass()
                  main_camera.apply_viewport();
  
              if (framebuffers_type == OpenGLManager::EFramebufferType::Arb) {
@@ -9485,7 +9587,7 @@ index 95944a8d..6e633dc8 100644
                  if (render_depth != 0)
                      glsafe(::glDeleteRenderbuffers(1, &render_depth));
                  if (render_fbo != 0)
-@@ -8548,8 +8717,8 @@ void GLCanvas3D::_render_fps_overlay(int fps) const
+@@ -8548,8 +8721,8 @@ void GLCanvas3D::_render_fps_overlay(int fps) const
          pos = ImVec2(legend->Pos.x - margin, legend->Pos.y);
      // The toolbar row can reach the corner on a narrow canvas; stack the overlay below it then.
      else if (m_main_toolbar.is_enabled() &&
@@ -9496,7 +9598,7 @@ index 95944a8d..6e633dc8 100644
      ImGui::SetNextWindowPos(pos, ImGuiCond_Always, ImVec2(1.0f, 0.0f));
      ImGui::SetNextWindowBgAlpha(0.35f);
      ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f * get_scale());
-@@ -9880,9 +10049,20 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
+@@ -9880,9 +10053,20 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
      //BBS: GUI refactor: GLToolbar
  #if BBS_TOOLBAR_ON_TOP
      float collapse_toolbar_width = collapse_toolbar.is_enabled() ? collapse_toolbar.get_width() : 0;
@@ -9519,7 +9621,7 @@ index 95944a8d..6e633dc8 100644
      float noitems_width = top_tb_width - size * items_cnt; // width of separators and borders in top toolbars
  
      // calculate scale needed for items in all top toolbars
-@@ -9895,6 +10075,15 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
+@@ -9895,6 +10079,15 @@ void GLCanvas3D::_check_and_update_toolbar_icon_scale()
  
      //use the same value as horizon
      float new_v_scale = new_h_scale;
@@ -9535,7 +9637,7 @@ index 95944a8d..6e633dc8 100644
  #else
      float top_tb_width = = collapse_toolbar.get_width();
      int   items_cnt = collapse_toolbar.get_visible_items_cnt();
-@@ -10168,7 +10357,7 @@ int GLCanvas3D::get_main_toolbar_offset() const
+@@ -10168,7 +10361,7 @@ int GLCanvas3D::get_main_toolbar_offset() const
  {
      const float cnv_width              = get_canvas_size().get_width();
      const float collapse_toolbar_width = get_collapse_toolbar_width() * 2;
@@ -9544,7 +9646,7 @@ index 95944a8d..6e633dc8 100644
      const float assemble_width         = m_assemble_view_toolbar.get_width();
      const float separator_width        = m_separator_toolbar.get_width();
      const float toolbar_total_width    = m_main_toolbar.get_width() + separator_width + gizmo_width + assemble_width + collapse_toolbar_width;
-@@ -10685,7 +10874,7 @@ void GLCanvas3D::_render_plate_switcher()
+@@ -10685,7 +10878,7 @@ void GLCanvas3D::_render_plate_switcher()
      const float   spacing   = 8.f * sc;
      const float   rounding  = 4.f * sc;
      const float   scrollbar = PLATE_TOOLBAR_SCROLLBAR * sc;
@@ -9553,7 +9655,7 @@ index 95944a8d..6e633dc8 100644
      const float   content_h = plate_count * (btn_size.y + spacing) - spacing + 2.f * padding.y;
      const float   max_h     = std::max(btn_size.y + 2.f * padding.y, float(get_canvas_size().get_height()) - top - (canvas_corner_height() + CANVAS_TOOLBAR_MARGIN) * sc);
      // As in the Preview plate toolbar, the scrollbar shows only while the mouse is over the column.
-@@ -10758,7 +10947,7 @@ void GLCanvas3D::_render_assemble_view_toolbar() const
+@@ -10758,7 +10951,7 @@ void GLCanvas3D::_render_assemble_view_toolbar() const
          return;
  
      const Size cnv_size = get_canvas_size();
@@ -9562,7 +9664,7 @@ index 95944a8d..6e633dc8 100644
      const float separator_width = m_separator_toolbar.get_width();
      const float top = 0.5f * (float)cnv_size.get_height();
      const float main_toolbar_left = -0.5f * cnv_size.get_width() + get_main_toolbar_offset();
-@@ -11186,7 +11375,7 @@ void GLCanvas3D::_render_separator_toolbar_right() const
+@@ -11186,7 +11379,7 @@ void GLCanvas3D::_render_separator_toolbar_right() const
          return;
  
      const Size cnv_size = get_canvas_size();
@@ -9714,7 +9816,7 @@ index 003f994a..4ed8b7df 100644
      return { valid, error };
  }
 diff --git a/src/slic3r/GUI/GUI_App.cpp b/src/slic3r/GUI/GUI_App.cpp
-index b9e11922..ecc63ed1 100644
+index b9e11922..4580542e 100644
 --- a/src/slic3r/GUI/GUI_App.cpp
 +++ b/src/slic3r/GUI/GUI_App.cpp
 @@ -106,6 +106,9 @@
@@ -9727,7 +9829,7 @@ index b9e11922..ecc63ed1 100644
  #include <wx/snglinst.h>
  #include <wx/image.h>
  #include <wx/settings.h>
-@@ -1186,6 +1189,42 @@ void GUI_App::post_init()
+@@ -1186,6 +1189,47 @@ void GUI_App::post_init()
          m_agent->start_discovery(true, false);
      }
  
@@ -9757,7 +9859,12 @@ index b9e11922..ecc63ed1 100644
 +                                        << " " << r.x << "," << r.y << " " << r.width << "x" << r.height
 +                                        << " virt=" << w->GetVirtualSize().x << "x" << w->GetVirtualSize().y
 +                                        << " q=" << (q ? q->x() : -1) << "," << (q ? q->y() : -1) << " " << (q ? q->width() : -1) << "x" << (q ? q->height() : -1)
-+                                        << (q && q->isVisible() ? " qvis" : " qhid");
++                                        << (q && q->isVisible() ? " qvis" : " qhid")
++                                        << " min=" << w->GetMinSize().x << "x" << w->GetMinSize().y
++                                        << " best=" << w->GetBestSize().x << "x" << w->GetBestSize().y
++                                        << (w->GetContainingSizer() ? "" : " nosizer")
++                                        << (w->IsThisEnabled() ? "" : " wxDISABLED") << (q && !q->isEnabled() ? " qDISABLED" : "")
++                                        << (q && q->testAttribute(Qt::WA_TransparentForMouseEvents) ? " qMOUSETRANSPARENT" : "");
 +                for (wxWindow* c : w->GetChildren())
 +                    dump(c, depth + 1);
 +            };
@@ -9770,7 +9877,7 @@ index b9e11922..ecc63ed1 100644
      //update the plugin tips
      CallAfter([this] {
              mainframe->refresh_plugin_tips();
-@@ -3358,7 +3397,12 @@ bool GUI_App::on_init_inner()
+@@ -3358,7 +3402,12 @@ bool GUI_App::on_init_inner()
  
      // Orca: use wxWeakRef to provent wild pointer.
      wxWeakRef<SplashScreen> scrn = nullptr;
@@ -9783,7 +9890,7 @@ index b9e11922..ecc63ed1 100644
          // Detect position (display) to show the splash screen
          // Now this position is equal to the mainframe position
          wxPoint splashscreen_pos = wxDefaultPosition;
-@@ -6234,7 +6278,7 @@ struct UpdaterQuery
+@@ -6234,7 +6283,7 @@ struct UpdaterQuery
  std::string detect_updater_os_info()
  {
      wxString description = wxPlatformInfo::Get().GetOperatingSystemDescription();
@@ -9792,7 +9899,7 @@ index b9e11922..ecc63ed1 100644
      wxLinuxDistributionInfo distro = wxGetLinuxDistributionInfo();
      if (!distro.Id.empty()) {
          wxString normalized = distro.Id;
-@@ -6452,6 +6496,9 @@ void maybe_attach_updater_signature(Http& http, const std::string& canonical_que
+@@ -6452,6 +6501,9 @@ void maybe_attach_updater_signature(Http& http, const std::string& canonical_que
  
  void GUI_App::check_new_version_sf(bool show_tips, int by_user)
  {
@@ -10268,7 +10375,7 @@ index 9e821232..a75275da 100644
  
  private:
 diff --git a/src/slic3r/GUI/Plater.cpp b/src/slic3r/GUI/Plater.cpp
-index d395fe10..74f8582d 100644
+index d395fe10..7967407d 100644
 --- a/src/slic3r/GUI/Plater.cpp
 +++ b/src/slic3r/GUI/Plater.cpp
 @@ -869,6 +869,9 @@ struct Sidebar::priv
@@ -10281,7 +10388,40 @@ index d395fe10..74f8582d 100644
      PlaterPresetComboBox *combo_sla_print = nullptr;
      PlaterPresetComboBox *combo_sla_material = nullptr;
  
-@@ -3626,12 +3629,29 @@ Sidebar::Sidebar(Plater *parent)
+@@ -2919,7 +2922,9 @@ Sidebar::Sidebar(Plater *parent)
+ 
+         p->btn_edit_printer = new ScalableButton(p->panel_printer_preset, wxID_ANY, "edit");
+         p->btn_edit_printer->SetToolTip(_L("Click to edit preset"));
++#ifndef __ANDROID__
+         p->btn_edit_printer->Hide(); // hide for first launch
++#endif
+         p->btn_edit_printer->Bind(wxEVT_BUTTON, [this, panel_color, printer_preset_hovered](wxCommandEvent){
+             p->editing_filament = -1;
+             if (p->combo_printer->switch_to_tab())
+@@ -2931,7 +2936,9 @@ Sidebar::Sidebar(Plater *parent)
+                     return;
+ 				p->panel_printer_preset->SetBorderColor(panel_color.bd_normal);
+                 printer_preset_hovered->clear();
++#ifndef __ANDROID__
+                 p->btn_edit_printer->Hide();
++#endif
+                 p->panel_printer_preset->Layout();
+             });
+         });
+@@ -2986,7 +2993,12 @@ Sidebar::Sidebar(Plater *parent)
+         // This prevents the extraneous enter/leave events generated by the
+         // layout change itself from causing a feedback loop.
+         Bind(wxEVT_IDLE, [this, printer_preset_hovered](wxIdleEvent &e) {
++#ifdef __ANDROID__
++            // A touch screen has no hover to reveal the edit button with: it stays shown.
++            const bool hovered = true;
++#else
+             auto hovered = !printer_preset_hovered->empty();
++#endif
+             if (p->btn_edit_printer->IsShown() != hovered) {
+                 if (hovered) {
+                     p->btn_edit_printer->Show();
+@@ -3626,12 +3638,29 @@ Sidebar::Sidebar(Plater *parent)
      p->sizer_params->Add(p->object_layers->get_sizer(), 0, wxEXPAND | wxTOP, 0);
  
      auto *sizer = new wxBoxSizer(wxVERTICAL);
@@ -10311,7 +10451,7 @@ index d395fe10..74f8582d 100644
  void Sidebar::on_enter_image_printer_bed(wxMouseEvent &evt) {
      //p->image_printer_bed->Bind(wxEVT_LEAVE_WINDOW, &Sidebar::on_leave_image_printer_bed, this);
      auto    pos  = p->panel_printer_bed->GetScreenPosition();
-@@ -7203,6 +7223,15 @@ struct Plater::priv
+@@ -7203,6 +7232,15 @@ struct Plater::priv
          bool                  is_collapsed{false};
          bool                  show{false};
      } sidebar_layout;
@@ -10327,7 +10467,7 @@ index d395fe10..74f8582d 100644
      Bed3D bed;
      Camera camera;
      //BBS: partplate related structure
-@@ -7985,6 +8014,11 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
+@@ -7985,6 +8023,11 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
          // Load previous window layout
          const auto cfg    = wxGetApp().app_config;
          wxString   layout = wxString::FromUTF8(cfg->get("window_layout"));
@@ -10339,7 +10479,7 @@ index d395fe10..74f8582d 100644
          if (!layout.empty()) {
              bool removed_floating_state = false;
  #ifdef __WXGTK__
-@@ -8376,6 +8410,19 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
+@@ -8376,6 +8419,19 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
      //    bool is_collapsed = wxGetApp().app_config->get("collapsed_sidebar") == "1";
      //    sidebar->collapse(is_collapsed);
      //}
@@ -10359,7 +10499,7 @@ index d395fe10..74f8582d 100644
      update_sidebar(true);
  }
  
-@@ -8649,6 +8696,24 @@ void Plater::priv::update_sidebar(bool force_update) {
+@@ -8649,6 +8705,24 @@ void Plater::priv::update_sidebar(bool force_update) {
          }
      }
  
@@ -10384,6 +10524,20 @@ index d395fe10..74f8582d 100644
      if (needs_update) {
          notification_manager->set_sidebar_collapsed(sidebar.IsShown());
          m_aui_mgr.Update();
+@@ -14062,7 +14136,13 @@ void Plater::priv::update_plugin_when_launch(wxCommandEvent &event)
+ 
+ void Plater::priv::show_install_plugin_hint(wxCommandEvent &event)
+ {
++#ifdef __ANDROID__
++    // The Bambu Lab network plug-in is a desktop binary: there is nothing to install on Android, and starting its
++    // download would only fetch a library that cannot be loaded.
++    notification_manager->push_notification(into_u8(_L("The Bambu Lab network plug-in is not available on Android. Network related features are unavailable.")));
++#else
+     notification_manager->bbl_show_plugin_install_notification(into_u8(_L("The network plug-in was not detected. Network related features are unavailable.")));
++#endif
+ }
+ 
+ void Plater::priv::show_preview_only_hint(wxCommandEvent &event)
 diff --git a/src/slic3r/GUI/Plater.hpp b/src/slic3r/GUI/Plater.hpp
 index 564addb0..c02bb793 100644
 --- a/src/slic3r/GUI/Plater.hpp

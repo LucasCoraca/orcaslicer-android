@@ -12,7 +12,7 @@ QT_ANDROID_ROOT=${QT_ANDROID_ROOT:-$HOME/Android/fcdeps}
 QT_HOST_PATH=${QT_HOST_PATH:-$QT_ANDROID_ROOT/qt-host}
 export JAVA_HOME=${JAVA_HOME:-$HOME/Android/jdk17}
 ORCA_KEYSTORE=${ORCA_KEYSTORE:-$R/hosttools/debug.keystore}
-JOBS=${JOBS:-$(nproc)}
+JOBS=${JOBS:-2}   # shared machine: it crashed from overload at higher -j
 # private host tools: cmake >= 3.28 and ninja in a Python venv (pip install cmake ninja), GNU m4 for the autotools deps
 export PATH=$R/hosttools/pyenv/bin:$R/hosttools/bin:$JAVA_HOME/bin:$PATH
 

@@ -290,7 +290,7 @@ index dc57dc3..ccda993 100644
  
  // ---------------------------------------------------------
 diff --git a/include/wx/qt/glcanvas.h b/include/wx/qt/glcanvas.h
-index 847316d..97474c9 100644
+index 847316d..ff41cd5 100644
 --- a/include/wx/qt/glcanvas.h
 +++ b/include/wx/qt/glcanvas.h
 @@ -8,7 +8,11 @@
@@ -306,6 +306,19 @@ index 847316d..97474c9 100644
  
  class QOpenGLWidget;
  class QOpenGLContext;
+@@ -83,6 +87,12 @@ public:
+ 
+     virtual bool QtCanPaintWithoutActivePainter() const override;
+ 
++#ifdef __ANDROID__
++    // Programs drawing their own text fields (e.g. ImGui) call this while one is being edited: the canvas
++    // then takes the input method's text (the soft keyboard) and turns it into key and char events.
++    void QtShowSoftKeyboard(bool show);
++#endif
++
+     static bool ConvertWXAttrsToQtGL(const wxGLAttributes &glattrs, const wxGLContextAttrs ctxAttrs, QSurfaceFormat &format);
+ 
+ private:
 diff --git a/include/wx/qt/private/winevent.h b/include/wx/qt/private/winevent.h
 index 8933a1a..b6bc935 100644
 --- a/include/wx/qt/private/winevent.h
@@ -814,10 +827,10 @@ index 0000000..db339fa
 +}
 diff --git a/src/qt/android/java/org/orcaport/wx/WebViewBridge.java b/src/qt/android/java/org/orcaport/wx/WebViewBridge.java
 new file mode 100644
-index 0000000..c9f1810
+index 0000000..69f3b01
 --- /dev/null
 +++ b/src/qt/android/java/org/orcaport/wx/WebViewBridge.java
-@@ -0,0 +1,291 @@
+@@ -0,0 +1,300 @@
 +package org.orcaport.wx;
 +
 +import android.app.Activity;
@@ -825,6 +838,7 @@ index 0000000..c9f1810
 +import android.os.Message;
 +import android.view.Gravity;
 +import android.view.KeyEvent;
++import android.view.MotionEvent;
 +import android.view.View;
 +import android.view.ViewGroup;
 +import android.webkit.CookieManager;
@@ -864,7 +878,7 @@ index 0000000..c9f1810
 +    private final ArrayList<String> userScripts = new ArrayList<>();
 +    private final Map<String, Object> handlers = new HashMap<>();
 +    private volatile String url = "", title = "", userAgent = "";
-+    private volatile boolean busy, canBack, canForward, destroyed;
++    private volatile boolean busy, canBack, canForward, destroyed, blocked;
 +    private boolean visible = true, devTools;
 +
 +    public static WebViewBridge create(Activity activity, long id) {
@@ -884,7 +898,10 @@ index 0000000..c9f1810
 +
 +    private void init() {
 +        if (destroyed) return;
-+        web = new WebView(contentRoot != null ? contentRoot.getContext() : activity);
++        web = new WebView(contentRoot != null ? contentRoot.getContext() : activity) {
++            // blocked (a modal dialog or popup is open elsewhere): not consumed, the touch goes to the Qt window below
++            @Override public boolean dispatchTouchEvent(MotionEvent e) { return !blocked && super.dispatchTouchEvent(e); }
++        };
 +        WebSettings s = web.getSettings();
 +        s.setJavaScriptEnabled(true);
 +        s.setDomStorageEnabled(true);
@@ -933,6 +950,11 @@ index 0000000..c9f1810
 +            visible = v;
 +            if (web != null) web.setVisibility(v ? View.VISIBLE : View.INVISIBLE);
 +        }});
++    }
++
++    public void setBlocked(final boolean b) {
++        blocked = b;
++        if (b) activity.runOnUiThread(new Runnable() { public void run() { if (web != null && web.hasFocus()) web.clearFocus(); }});
 +    }
 +
 +    public void requestFocusNative() {
@@ -1109,11 +1131,30 @@ index 0000000..c9f1810
 +        }
 +    }
 +}
+diff --git a/src/qt/anybutton.cpp b/src/qt/anybutton.cpp
+index 94b0718..b119f0e 100644
+--- a/src/qt/anybutton.cpp
++++ b/src/qt/anybutton.cpp
+@@ -140,11 +140,9 @@ void wxAnyButton::DoSetBitmap(const wxBitmapBundle& bitmap, State which)
+     // Cache the bitmap.
+     m_bitmaps[which] = bitmap;
+ 
+-    // Replace current bitmap only if the button is in the same state.
+-    if ( which == QtGetCurrentState() )
+-    {
+-        QtUpdateState();
+-    }
++    // Show it if it is the bitmap for the current state, or the one used in its place: a state without its
++    // own bitmap shows the normal one (a checked toggle whose program only ever sets the normal bitmap).
++    QtUpdateState();
+ }
+ 
+ wxAnyButton::State wxAnyButton::QtGetCurrentState() const
 diff --git a/src/qt/app.cpp b/src/qt/app.cpp
-index 9521282..1f282de 100644
+index 9521282..dc6c344 100644
 --- a/src/qt/app.cpp
 +++ b/src/qt/app.cpp
-@@ -14,7 +14,54 @@
+@@ -14,7 +14,457 @@
  #include "wx/qt/private/utils.h"
  #include "wx/qt/private/converter.h"
  #include <QtCore/QStringList>
@@ -1123,17 +1164,74 @@ index 9521282..1f282de 100644
 +#include <QtGui/QMouseEvent>
 +#include <QtGui/QTouchEvent>
 +#include <QtGui/QWindow>
++#include <QtGui/QKeyEvent>
++#include "wx/dialog.h"
++#include "wx/window.h"
 +
 +#ifdef __ANDROID__
-+// Qt's Android plugin (6.8) maps pointer events for every top-level window except the one at the origin
++#include <QtGui/private/qeventpoint_p.h>
++#include <QtCore/QElapsedTimer>
++#include <QtCore/QLineF>
++#include <QtCore/QPointer>
++#include <QtCore/QTimer>
++#include <QtCore/QJniObject>
++#include <QtCore/qcoreapplication_platform.h>
++#include <QtCore/QCoreApplication>
++#include <QtGui/QGuiApplication>
++#include <QtGui/QInputMethod>
++#include <QtGui/QScreen>
++#include <QtWidgets/QProxyStyle>
++#include <android/log.h>
++#include <sys/system_properties.h>
++
++// adb shell setprop debug.orca.input 1: log window-level pointer events (logcat tag wxqt-input)
++static bool wxQtAndroidTraceInput()
++{
++    static QElapsedTimer s_checked;
++    static bool s_on = false;
++    if ( !s_checked.isValid() || s_checked.elapsed() > 2000 )
++    {
++        char value[PROP_VALUE_MAX] = {};
++        __system_property_get("debug.orca.input", value);
++        s_on = value[0] == '1';
++        s_checked.start();
++    }
++    return s_on;
++}
++
++// Window-level pointer input on Android, before Qt dispatches it to the widgets.
++//
++// Qt's Android plugin (6.8) maps touch points for every top-level window except the one at the origin
 +// (menus, combo/dropdown popups, dialogs) to a position that is off by the window's position divided by
 +// the device pixel ratio. The main window sits at (0, 0), so only secondary windows are affected. Undo the
-+// offset on the window-level mouse events, before Qt dispatches them to the widgets inside.
++// offset on the window-level touch events: the mouse events Qt synthesizes from unaccepted touches are then
++// right too, and so are the touches scroll areas (QScroller) accept. Real mouse events are not affected.
++//
++// A finger held still on a control is a right click (context menus: object list, presets...), as the GL
++// canvas does on its own. The finger's press is then ended away from the control, so it is not a click too.
 +class wxQtAndroidSecondaryWindowInputFix : public QObject
 +{
++public:
++    wxQtAndroidSecondaryWindowInputFix()
++    {
++        m_longPress.setSingleShot(true);
++        m_longPress.setInterval(550);
++        QObject::connect(&m_longPress, &QTimer::timeout, this, [this] { FireLongPress(); });
++    }
++
 +protected:
 +    bool eventFilter(QObject* obj, QEvent* event) override
 +    {
++        if ( event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease )
++        {
++            QWindow* const window = qobject_cast<QWindow*>(obj);
++            if ( !window || event == m_ownEvent || static_cast<QKeyEvent*>(event)->key() != Qt::Key_Back )
++                return false;
++            HandleBack(window, event);
++            return true;
++        }
++
++        bool touch = false;
 +        switch ( event->type() )
 +        {
 +            case QEvent::MouseButtonPress:
@@ -1141,34 +1239,380 @@ index 9521282..1f282de 100644
 +            case QEvent::MouseButtonDblClick:
 +            case QEvent::MouseMove:
 +                break;
++            case QEvent::TouchBegin:
++            case QEvent::TouchUpdate:
++            case QEvent::TouchEnd:
++            case QEvent::TouchCancel:
++                touch = true;
++                break;
 +            default:
 +                return false;
 +        }
 +
++        // events this filter sends itself are already right (not a flag: sending one may run a nested event
++        // loop, a modal dialog opened by a click, whose events must be fixed as well)
 +        QWindow* const window = qobject_cast<QWindow*>(obj);
-+        if ( !window || m_resending || window->position().isNull() )
++        if ( window && wxQtAndroidTraceInput() )
++        {
++            QPointF pos;
++            if ( touch )
++            {
++                const auto* const te = static_cast<QTouchEvent*>(event);
++                if ( te->pointCount() )
++                    pos = te->points().first().position();
++            }
++            else
++                pos = static_cast<QMouseEvent*>(event)->position();
++            QString under = "-";
++            for ( QWidget* tl : QApplication::topLevelWidgets() )
++                if ( tl->windowHandle() == window )
++                    if ( QWidget* c = tl->childAt(pos.toPoint()) )
++                    {
++                        wxWindowQt* const w = wxWindowQt::QtRetrieveWindowPointer(c);
++                        under = QString("%1%2(%3)").arg(c->metaObject()->className()).arg(c->isEnabled() ? "" : "!DISABLED")
++                                    .arg(w ? QString::fromUtf8(w->GetClassInfo()->GetClassName() ? wxString(w->GetClassInfo()->GetClassName()).utf8_str().data() : "") : QString());
++                    }
++            __android_log_print(ANDROID_LOG_INFO, "wxqt-input", "%s type=%d win=%s pos=%d,%d size=%dx%d at=%.1f,%.1f own=%d modal=%s under=%s grab=%s",
++                                event == m_ownEvent ? "fixed" : "raw", int(event->type()),
++                                window->objectName().toUtf8().constData(), window->position().x(), window->position().y(),
++                                window->width(), window->height(), pos.x(), pos.y(), event == m_ownEvent,
++                                QApplication::activeModalWidget() ? QApplication::activeModalWidget()->metaObject()->className() : "-",
++                                under.toUtf8().constData(),
++                                QWidget::mouseGrabber() ? QWidget::mouseGrabber()->metaObject()->className() : "-");
++        }
++        if ( !window || event == m_ownEvent )
 +            return false;
 +
-+        auto* const me = static_cast<QMouseEvent*>(event);
-+        const QPointF delta = QPointF(window->position()) / window->devicePixelRatio();
-+        QMouseEvent fixed(me->type(), me->position() - delta, me->scenePosition() - delta, me->globalPosition() - delta,
-+                          me->button(), me->buttons(), me->modifiers(), me->source(), me->pointingDevice());
-+        fixed.setTimestamp(me->timestamp());
++        if ( touch && (event->type() == QEvent::TouchEnd || event->type() == QEvent::TouchCancel) )
++        {
++            const auto* const te = static_cast<QTouchEvent*>(event);
++            const QPointF delta = window->position().isNull()
++                                  ? QPointF() : QPointF(window->position()) / window->devicePixelRatio();
++            if ( te->pointCount() )
++                LeaveAfterLift(window, te->points().first().position() - delta);
++        }
 +
-+        m_resending = true;
-+        QCoreApplication::sendEvent(window, &fixed);
-+        m_resending = false;
++        if ( window->position().isNull() )
++        {
++            if ( touch && TrackLongPress(window, static_cast<QTouchEvent*>(event)) )
++            {
++                event->setAccepted(true);
++                return true;
++            }
++            return false;
++        }
++
++        if ( !touch )
++            return false;
++
++        const QPointF delta = QPointF(window->position()) / window->devicePixelRatio();
++        auto* const te = static_cast<QTouchEvent*>(event);
++        QList<QEventPoint> points = te->points();
++        for ( QEventPoint& p : points )
++        {
++            QMutableEventPoint::setPosition(p, p.position() - delta);
++            QMutableEventPoint::setScenePosition(p, p.scenePosition() - delta);
++            QMutableEventPoint::setGlobalPosition(p, p.globalPosition() - delta);
++        }
++        QTouchEvent fixed(te->type(), te->pointingDevice(), te->modifiers(), points);
++        fixed.setTimestamp(te->timestamp());
++        if ( TrackLongPress(window, &fixed) )
++        {
++            te->setAccepted(true);
++            return true;
++        }
++
++        Send(window, &fixed);
++
++        // Qt synthesizes mouse events from the touches nobody accepted: report what happened to the copy.
++        te->setAccepted(fixed.isAccepted());
++        for ( qsizetype i = 0; i < te->pointCount() && i < fixed.pointCount(); ++i )
++            te->point(i).setAccepted(fixed.point(i).isAccepted());
 +        return true;
 +    }
 +
 +private:
-+    bool m_resending = false;
++    void Send(QWindow* window, QEvent* event)
++    {
++        QEvent* const previous = m_ownEvent;
++        m_ownEvent = event;
++        QCoreApplication::sendEvent(window, event);
++        m_ownEvent = previous;
++    }
++
++    void SendMouse(QWindow* window, QEvent::Type type, const QPointF& pos, Qt::MouseButton button, Qt::MouseButtons buttons)
++    {
++        QMouseEvent me(type, pos, pos, window->mapToGlobal(pos), button, buttons, Qt::NoModifier);
++        Send(window, &me);
++    }
++
++    // A finger does not hover: once it is lifted, the pointer has left whatever it touched. Without a leave the
++    // control keeps its hover look (toolbar buttons stayed highlighted after a tap). Qt's own leave would carry
++    // the last finger position (QCursor::pos()), inside the control, so give the wx window under the finger its
++    // leave event directly, once the release the touch turns into has been handled. Not in menus, where leaving
++    // would reset the highlighted item.
++    void LeaveAfterLift(QWindow* window, const QPointF& pos)
++    {
++        if ( (window->flags() & Qt::WindowType_Mask) == Qt::Popup )
++            return;
++        QWidget* target = nullptr;
++        for ( QWidget* tl : QApplication::topLevelWidgets() )
++            if ( tl->windowHandle() == window )
++                target = tl->childAt(pos.toPoint());
++        if ( !target )
++            return;
++        QPointer<QWidget> widget(target);
++        QTimer::singleShot(0, this, [widget] {
++            if ( !widget || (QGuiApplication::mouseButtons() & Qt::LeftButton) )
++                return;
++            for ( QWidget* w = widget; w; w = w->parentWidget() )
++            {
++                wxWindowQt* const win = wxWindowQt::QtRetrieveWindowPointer(w);
++                if ( !win )
++                    continue;
++                if ( win->HasCapture() )
++                    return;
++                wxMouseEvent leave(wxEVT_LEAVE_WINDOW);
++                leave.SetEventObject(win);
++                leave.SetId(win->GetId());
++                leave.SetPosition(wxPoint(-1, -1));
++                win->HandleWindowEvent(leave);
++                return;
++            }
++        });
++    }
++
++    // The control under a window position, if a long press there should be a right click: not the GL canvas
++    // (it has its own touch handling) nor text fields (the system's text selection) nor popups (menus).
++    static bool AcceptsLongPress(QWindow* window, const QPointF& pos)
++    {
++        if ( (window->flags() & Qt::WindowType_Mask) == Qt::Popup )
++            return false;
++        for ( QWidget* tl : QApplication::topLevelWidgets() )
++        {
++            if ( tl->windowHandle() != window )
++                continue;
++            for ( QWidget* w = tl->childAt(pos.toPoint()); w; w = w->parentWidget() )
++            {
++                if ( w->inherits("QOpenGLWidget") || w->inherits("QLineEdit") || w->inherits("QTextEdit") ||
++                     w->inherits("QPlainTextEdit") || w->inherits("QAbstractSpinBox") )
++                    return false;
++            }
++            return true;
++        }
++        return false;
++    }
++
++    // Returns true if the touch event belongs to a long press that already fired and must not be delivered.
++    bool TrackLongPress(QWindow* window, QTouchEvent* te)
++    {
++        const QPointF pos = te->pointCount() ? te->point(0).position() : QPointF();
++        switch ( te->type() )
++        {
++            case QEvent::TouchBegin:
++                m_longPress.stop();
++                m_longPressFired = false;
++                m_longPressWindow = window;
++                m_longPressPos = pos;
++                if ( te->pointCount() == 1 && AcceptsLongPress(window, pos) )
++                    m_longPress.start();
++                return false;
++
++            case QEvent::TouchUpdate:
++                if ( m_longPressFired )
++                    return true;
++                if ( te->pointCount() != 1 || QLineF(pos, m_longPressPos).length() > 12 )
++                    m_longPress.stop();
++                return false;
++
++            default:
++                m_longPress.stop();
++                if ( !m_longPressFired )
++                    return false;
++                m_longPressFired = false;
++                if ( m_longPressWindow == window )
++                    SendMouse(window, QEvent::MouseButtonRelease, QPointF(-10000, -10000), Qt::LeftButton, Qt::NoButton);
++                return true;
++        }
++    }
++
++    void FireLongPress()
++    {
++        QWindow* const window = m_longPressWindow;
++        if ( !window )
++            return;
++        m_longPressFired = true;
++        const QPointF pos = m_longPressPos;
++        SendMouse(window, QEvent::MouseButtonPress, pos, Qt::RightButton, Qt::LeftButton | Qt::RightButton);
++        if ( m_longPressWindow )
++            SendMouse(window, QEvent::MouseButtonRelease, pos, Qt::RightButton, Qt::LeftButton);
++    }
++
++    // The system Back key arrives as Escape, which closes a wx dialog only when it has a Cancel button. On
++    // Android it is the way to dismiss any dialog (there is no title bar close box): if the dialog that was
++    // active when it was pressed is still open once it is released, close it like that box would. Back with
++    // nothing to dismiss sends the app to the background, as the Home button does: left unhandled, Qt would
++    // finish the activity and the program would quit on the spot, unsaved work and all.
++    static wxDialog* ActiveDialog()
++    {
++        QWidget* const active = QApplication::activeWindow();
++        return active && active->inherits("QDialog")
++               ? wxDynamicCast(wxWindowQt::QtRetrieveWindowPointer(active), wxDialog) : nullptr;
++    }
++
++    void HandleBack(QWindow* window, QEvent* event)
++    {
++        const bool press = event->type() == QEvent::KeyPress;
++        if ( press )
++        {
++            m_backDialog = ActiveDialog();
++            m_backHadPopup = QApplication::activePopupWidget() != nullptr;
++        }
++
++        Send(window, event); // wx sees Escape
++        event->setAccepted(true);
++        if ( press || static_cast<QKeyEvent*>(event)->isAutoRepeat() )
++            return;
++
++        wxDialog* const dlg = ActiveDialog();
++        if ( dlg && dlg == m_backDialog && dlg->IsShown() )
++            dlg->Close();
++        else if ( !m_backDialog && !m_backHadPopup && !dlg && !QApplication::activePopupWidget() )
++        {
++            // on the Android UI thread, like the Home button: from the Qt thread the activity came back with a
++            // window whose surface Qt then waited for forever (frozen app)
++            QNativeInterface::QAndroidApplication::runOnAndroidMainThread([] {
++                QJniObject activity = QNativeInterface::QAndroidApplication::context();
++                activity.callMethod<jboolean>("moveTaskToBack", "(Z)Z", jboolean(true));
++            });
++        }
++        m_backDialog = nullptr;
++        m_backHadPopup = false;
++    }
++
++    wxDialog* m_backDialog = nullptr;
++    bool m_backHadPopup = false;
++    QEvent* m_ownEvent = nullptr;
++    QTimer m_longPress;
++    QPointer<QWindow> m_longPressWindow;
++    QPointF m_longPressPos;
++    bool m_longPressFired = false;
++};
++
++// Menus on a touch screen: Qt sends a finger's position as a hover move just before the press, the hover starts
++// opening the submenu of the item under it and the press then toggles that submenu closed again, so tapping a
++// submenu item ("Import >", "Help >") often did nothing. There is no hover to open submenus with here: only
++// the tap opens them.
++class wxQtAndroidTouchStyle : public QProxyStyle
++{
++public:
++    explicit wxQtAndroidTouchStyle(const QString& key) : QProxyStyle(key) {}
++
++    int styleHint(StyleHint hint, const QStyleOption* option, const QWidget* widget,
++                  QStyleHintReturn* returnData) const override
++    {
++        if ( hint == QStyle::SH_Menu_SubMenuPopupDelay )
++            return 24 * 3600 * 1000;
++        return QProxyStyle::styleHint(hint, option, widget, returnData);
++    }
++};
++
++// The app runs full screen, where Android ignores adjustResize/adjustPan: the soft keyboard would cover the
++// field being edited. While a text field has the focus, slide the activity's content (the Qt windows and the web
++// views over them) up by as much as the keyboard covers that field. Qt's own idea of the keyboard (QInputMethod
++// visibility and rectangle) is not reliable here, so ask Android for the IME inset of the window.
++class wxQtAndroidKeyboardPan : public QObject
++{
++public:
++    wxQtAndroidKeyboardPan()
++    {
++        m_timer.setInterval(200);
++        QObject::connect(&m_timer, &QTimer::timeout, this, [this] { Update(); });
++        QObject::connect(qApp, &QApplication::focusChanged, this, [this] { Update(); });
++    }
++
++private:
++    static bool IsTextField(const QWidget* w)
++    {
++        return w && (w->inherits("QLineEdit") || w->inherits("QTextEdit") || w->inherits("QPlainTextEdit") ||
++                     w->inherits("QAbstractSpinBox") || w->inherits("QComboBox"));
++    }
++
++    static QJniObject ContentView()
++    {
++        QJniObject activity = QNativeInterface::QAndroidApplication::context();
++        QJniObject window = activity.callObjectMethod("getWindow", "()Landroid/view/Window;");
++        QJniObject decor = window.callObjectMethod("getDecorView", "()Landroid/view/View;");
++        return decor.callObjectMethod("findViewById", "(I)Landroid/view/View;", jint(0x01020002)); // android.R.id.content
++    }
++
++    // Height of the soft keyboard in physical pixels, 0 when it is not shown.
++    static int KeyboardHeight()
++    {
++        if ( QNativeInterface::QAndroidApplication::sdkVersion() < 30 ) // WindowInsets.Type: Android 11
++            return 0;
++        QJniObject content = ContentView();
++        if ( !content.isValid() )
++            return 0;
++        QJniObject insets = content.callObjectMethod("getRootWindowInsets", "()Landroid/view/WindowInsets;");
++        if ( !insets.isValid() )
++            return 0;
++        const jint ime = QJniObject::callStaticMethod<jint>("android/view/WindowInsets$Type", "ime", "()I");
++        QJniObject r = insets.callObjectMethod("getInsets", "(I)Landroid/graphics/Insets;", ime);
++        return r.isValid() ? r.getField<jint>("bottom") : 0;
++    }
++
++    void Update()
++    {
++        QWidget* const focus = QApplication::focusWidget();
++        const bool editing = IsTextField(focus);
++        if ( editing && !m_timer.isActive() )
++            m_timer.start();
++        else if ( !editing )
++            m_timer.stop();
++
++        int shift = 0; // physical pixels
++        if ( editing )
++        {
++            const int kb = KeyboardHeight();
++            const QScreen* const screen = focus->screen();
++            if ( kb > 0 && screen )
++            {
++                const qreal dpr = focus->devicePixelRatioF();
++                const int screenHeight = qRound(screen->geometry().height() * dpr);
++                // the field's place on the screen without the current shift
++                const int fieldTop = qRound(focus->mapToGlobal(QPoint(0, 0)).y() * dpr);
++                const int fieldBottom = fieldTop + qRound(focus->height() * dpr);
++                const int margin = qRound(12 * dpr);
++                const int keyboardTop = screenHeight - kb;
++                if ( fieldBottom + margin > keyboardTop )
++                    shift = qMin(fieldBottom + margin - keyboardTop, qMax(0, fieldTop - margin));
++            }
++        }
++
++        if ( wxQtAndroidTraceInput() )
++            __android_log_print(ANDROID_LOG_INFO, "wxqt-input", "pan: focus=%s kb=%d shift=%d",
++                                focus ? focus->metaObject()->className() : "-", editing ? KeyboardHeight() : -1, shift);
++        if ( shift == m_shift )
++            return;
++        m_shift = shift;
++
++        const float dy = -float(shift);
++        QNativeInterface::QAndroidApplication::runOnAndroidMainThread([dy] {
++            QJniObject content = ContentView();
++            if ( content.isValid() )
++                content.callMethod<void>("setTranslationY", "(F)V", jfloat(dy));
++        });
++    }
++
++    QTimer m_timer;
++    int m_shift = 0;
 +};
 +#endif // __ANDROID__
  #include <QSurfaceFormat>
  
  #include <algorithm>
-@@ -38,9 +85,17 @@ bool wxApp::Initialize( int& argc_, wxChar** argv_ )
+@@ -38,9 +488,17 @@ bool wxApp::Initialize( int& argc_, wxChar** argv_ )
  
      wxConvCurrent = &wxConvUTF8;
  
@@ -1187,7 +1631,7 @@ index 9521282..1f282de 100644
      QSurfaceFormat::setDefaultFormat(format);
  
      const int argcA = argc_;
-@@ -62,7 +117,19 @@ bool wxApp::Initialize( int& argc_, wxChar** argv_ )
+@@ -62,7 +520,21 @@ bool wxApp::Initialize( int& argc_, wxChar** argv_ )
      // of the QApplication object. In addition, argc must be greater than zero and argv must
      // contain at least one valid character string.
  
@@ -1203,6 +1647,8 @@ index 9521282..1f282de 100644
      m_qtApplication.reset(new QApplication(argc_, argvA));
 +#ifdef __ANDROID__
 +    m_qtApplication->installEventFilter(new wxQtAndroidSecondaryWindowInputFix);
++    new wxQtAndroidKeyboardPan;
++    m_qtApplication->setStyle(new wxQtAndroidTouchStyle(m_qtApplication->style()->name()));
 +#endif
  
      if ( m_qtApplication->platformName() == "xcb" )
@@ -1302,10 +1748,10 @@ index 675d127..caca55a 100644
  
  wxWindowDCImpl::~wxWindowDCImpl()
 diff --git a/src/qt/dialog.cpp b/src/qt/dialog.cpp
-index 35fba8a..c2c1926 100644
+index 35fba8a..45463e0 100644
 --- a/src/qt/dialog.cpp
 +++ b/src/qt/dialog.cpp
-@@ -82,7 +82,10 @@ int wxDialog::ShowModal()
+@@ -82,9 +82,19 @@ int wxDialog::ShowModal()
      QDialog *qDialog = GetDialogHandle();
      qDialog->setModal(true);
  
@@ -1316,7 +1762,26 @@ index 35fba8a..c2c1926 100644
 +        Show(true);
  
      bool ret = qDialog->exec();
++
++    // QDialog::done() hid the Qt window but wx still thinks the dialog is shown: IsShown() stayed true, so
++    // e.g. a native child (a web view) kept being shown over the windows below and a following Show(true)
++    // did nothing. Hide it on the wx side as well, as the other ports do.
++    if ( wxWindowBase::IsShown() )
++        wxDialogBase::Show(false);
++
      if ( GetReturnCode() == 0 )
+         return ret ? wxID_OK : wxID_CANCEL;
+     return GetReturnCode();
+@@ -102,7 +112,8 @@ bool wxDialog::IsModal() const
+ {
+     wxCHECK_MSG( GetDialogHandle() != nullptr, false, "Invalid dialog" );
+ 
+-    return GetDialogHandle()->isModal();
++    // The Qt modal flag set by ShowModal() stays after exec() returns: only a visible one is running modally.
++    return GetDialogHandle()->isModal() && GetDialogHandle()->isVisible();
+ }
+ 
+ bool wxDialog::Show(bool show)
 diff --git a/src/qt/filedlg.cpp b/src/qt/filedlg.cpp
 index 22d141b..193b308 100644
 --- a/src/qt/filedlg.cpp
@@ -1519,11 +1984,32 @@ index faa1467..fb1507c 100644
 +    return QFontDatabase::addApplicationFont(wxQtConvertString(filename)) != -1;
 +}
 +#endif // wxUSE_PRIVATE_FONTS
+diff --git a/src/qt/gauge.cpp b/src/qt/gauge.cpp
+index 83aad7b..bff0a96 100644
+--- a/src/qt/gauge.cpp
++++ b/src/qt/gauge.cpp
+@@ -81,7 +81,15 @@ int wxGauge::GetRange() const
+ 
+ void wxGauge::SetValue(int pos)
+ {
+-    GetQProgressBar()->setValue(pos);
++    // QProgressBar::setValue() repaints synchronously when the change is visible. Programs update progress
++    // from anywhere, also from code running inside another window's paint handler (Orca processes its job
++    // queue there), and a paint started inside a paint crashes the raster engine. Schedule it instead.
++    QProgressBar* const bar = GetQProgressBar();
++    const bool updates = bar->updatesEnabled();
++    bar->setUpdatesEnabled(false);
++    bar->setValue(pos);
++    bar->setUpdatesEnabled(updates);
++    bar->update();
+ }
+ 
+ int wxGauge::GetValue() const
 diff --git a/src/qt/glcanvas.cpp b/src/qt/glcanvas.cpp
-index b3cadb8..b530741 100644
+index b3cadb8..43b8053 100644
 --- a/src/qt/glcanvas.cpp
 +++ b/src/qt/glcanvas.cpp
-@@ -14,9 +14,19 @@
+@@ -14,9 +14,24 @@
  
  #include <QOpenGLContext>
  #include <QOpenGLWidget>
@@ -1537,13 +2023,18 @@ index b3cadb8..b530741 100644
 +#include <QtGui/QMouseEvent>
 +#include <QtCore/QTimer>
 +#include <QtCore/QElapsedTimer>
++#ifdef __ANDROID__
++#include <QtGui/QGuiApplication>
++#include <QtGui/QInputMethod>
++#include <QtGui/QInputMethodEvent>
++#endif
 +#include <deque>
 +#include <functional>
 +#include <cmath>
  
  wxGCC_WARNING_SUPPRESS(unused-parameter)
  
-@@ -28,16 +38,383 @@ public:
+@@ -28,16 +43,461 @@ public:
      {
          setFormat(format);
          setFocusPolicy(Qt::StrongFocus);
@@ -1564,6 +2055,23 @@ index b3cadb8..b530741 100644
 +    {
 +        if ( !m_steps.empty() )
 +            QTimer::singleShot(0, this, [this] { RunStep(); });
++    }
++
++    // The program edits one of its own text fields (see wxGLCanvas::QtShowSoftKeyboard()).
++    void SetTextInput(bool on)
++    {
++        if ( on == m_textInput )
++            return;
++        m_textInput = on;
++        setAttribute(Qt::WA_InputMethodEnabled, on);
++        if ( on && !hasFocus() )
++            setFocus(Qt::OtherFocusReason);
++        QInputMethod* const im = QGuiApplication::inputMethod();
++        im->update(Qt::ImQueryAll);
++        if ( on )
++            im->show();
++        else
++            im->hide();
 +    }
 +#endif
 +
@@ -1594,6 +2102,45 @@ index b3cadb8..b530741 100644
 +        }
 +    }
 +#endif // __ANDROID__
++
++#ifdef __ANDROID__
++    virtual QVariant inputMethodQuery(Qt::InputMethodQuery query) const override
++    {
++        switch ( query )
++        {
++            case Qt::ImEnabled:
++                return m_textInput;
++            case Qt::ImHints:
++                // a plain keyboard that commits every key at once: no suggestions or composing text, which
++                // the program's field (it does not tell us its text) could not show
++                return int(Qt::ImhNoPredictiveText | Qt::ImhNoAutoUppercase | Qt::ImhSensitiveData);
++            case Qt::ImSurroundingText:
++            case Qt::ImTextBeforeCursor:
++            case Qt::ImTextAfterCursor:
++                return QString();
++            case Qt::ImCursorPosition:
++            case Qt::ImAnchorPosition:
++                return 0;
++            case Qt::ImCursorRectangle:
++                return QRect(0, 0, 1, 1);
++            default:
++                return wxQtEventSignalHandler<QOpenGLWidget, wxGLCanvas>::inputMethodQuery(query);
++        }
++    }
++
++    virtual void inputMethodEvent(QInputMethodEvent* event) override
++    {
++        // the keyboard deleting before the cursor (it believes there is text): backspaces
++        if ( event->replacementStart() < 0 && event->replacementLength() > 0 )
++            for ( int i = 0; i < event->replacementLength(); ++i )
++                SendKey(WXK_BACK, 0);
++        for ( const QChar c : event->commitString() )
++            SendKey(c.unicode() < 128 ? wxToupper(c.unicode()) : WXK_NONE, c.unicode());
++        event->accept();
++    }
++
++    void SendKey(int keyCode, wxChar uniChar);
++#endif
 +
      virtual void resizeEvent ( QResizeEvent * event ) override;
      virtual void paintEvent ( QPaintEvent * event ) override;
@@ -1639,6 +2186,7 @@ index b3cadb8..b530741 100644
 +    double m_startDistance = 1.0;
 +    double m_startAngle = 0.0;
 +    bool m_rotating = false;
++    bool m_textInput = false;
 +#endif // __ANDROID__
 +
 +    bool m_inPaint = false;
@@ -1681,6 +2229,27 @@ index b3cadb8..b530741 100644
 +    leave.SetId(win->GetId());
 +    leave.SetPosition(wxPoint(-1, -1));
 +    EmitEvent(leave);
++}
++
++void wxQtGLWidget::SendKey(int keyCode, wxChar uniChar)
++{
++    // what a hardware key would produce: key down, char, key up
++    wxGLCanvas* const win = GetHandler();
++    auto send = [win, keyCode, uniChar](wxEventType type) {
++        wxKeyEvent ev(type);
++        ev.SetEventObject(win);
++        ev.SetId(win->GetId());
++        ev.m_keyCode = keyCode != WXK_NONE ? keyCode : uniChar;
++        ev.m_uniChar = type == wxEVT_CHAR || keyCode == WXK_NONE ? uniChar : (keyCode < 128 ? wxChar(keyCode) : 0);
++        if ( type == wxEVT_CHAR && keyCode == WXK_BACK )
++            ev.m_uniChar = WXK_BACK;
++        return win->HandleWindowEvent(ev);
++    };
++    if ( keyCode != WXK_NONE )
++        send(wxEVT_KEY_DOWN);
++    send(wxEVT_CHAR);
++    if ( keyCode != WXK_NONE )
++        send(wxEVT_KEY_UP);
 +}
 +
 +void wxQtGLWidget::LongPress()
@@ -1927,7 +2496,7 @@ index b3cadb8..b530741 100644
  void wxQtGLWidget::resizeEvent ( QResizeEvent * event )
  {
      QOpenGLWidget::resizeEvent(event);
-@@ -50,14 +427,24 @@ void wxQtGLWidget::paintEvent ( QPaintEvent * event )
+@@ -50,14 +510,24 @@ void wxQtGLWidget::paintEvent ( QPaintEvent * event )
  
  void wxQtGLWidget::resizeGL(int w, int h)
  {
@@ -1952,7 +2521,7 @@ index b3cadb8..b530741 100644
  }
  
  // ----------------------------------------------------------------------------
-@@ -354,12 +741,14 @@ bool wxGLContext::SetCurrent(const wxGLCanvas& win) const
+@@ -354,12 +824,14 @@ bool wxGLContext::SetCurrent(const wxGLCanvas& win) const
      if (!m_glContext)
          const_cast<wxGLContext *>(this)->m_glContext = context;
  
@@ -1968,7 +2537,7 @@ index b3cadb8..b530741 100644
  
      qglWidget->makeCurrent();
      return true;
-@@ -494,7 +883,14 @@ bool wxGLCanvas::Create(wxWindow *parent,
+@@ -494,10 +966,25 @@ bool wxGLCanvas::Create(wxWindow *parent,
  
  bool wxGLCanvas::SwapBuffers()
  {
@@ -1984,6 +2553,17 @@ index b3cadb8..b530741 100644
      return true;
  }
  
++#ifdef __ANDROID__
++void wxGLCanvas::QtShowSoftKeyboard(bool show)
++{
++    if ( auto* const widget = dynamic_cast<wxQtGLWidget*>(GetHandle()) )
++        widget->SetTextInput(show);
++}
++#endif
++
+ bool wxGLCanvas::QtCanPaintWithoutActivePainter() const
+ {
+     return true;
 diff --git a/src/qt/secretstore_android.cpp b/src/qt/secretstore_android.cpp
 new file mode 100644
 index 0000000..10bac8f
@@ -2092,6 +2672,25 @@ index 0000000..10bac8f
 +}
 +
 +#endif // wxUSE_SECRETSTORE && __WXQT__ && __ANDROID__
+diff --git a/src/qt/tglbtn.cpp b/src/qt/tglbtn.cpp
+index 2b12326..47f1ddc 100644
+--- a/src/qt/tglbtn.cpp
++++ b/src/qt/tglbtn.cpp
+@@ -50,6 +50,14 @@ bool wxBitmapToggleButton::Create(wxWindow *parent,
+         return false;
+     }
+ 
++    // A borderless bitmap toggle is a picture of its state (programs draw checkboxes and radio buttons this
++    // way, swapping the bitmap on toggle): no bevel, and no "checked" panel Qt would paint behind it.
++    if ( style & wxBORDER_NONE )
++    {
++        GetQPushButton()->setFlat(true);
++        GetQPushButton()->setStyleSheet("QPushButton { border: none; background: transparent; padding: 0px; }");
++    }
++
+     // this button is toggleable and has a bitmap label:
+     if ( label.IsOk() )
+     {
 diff --git a/src/qt/toplevel.cpp b/src/qt/toplevel.cpp
 index 2c3fed1..5d21f0b 100644
 --- a/src/qt/toplevel.cpp
@@ -2186,10 +2785,10 @@ index 2c3fed1..5d21f0b 100644
 +#endif // __ANDROID__
 diff --git a/src/qt/webview_android.cpp b/src/qt/webview_android.cpp
 new file mode 100644
-index 0000000..7a3df45
+index 0000000..a644605
 --- /dev/null
 +++ b/src/qt/webview_android.cpp
-@@ -0,0 +1,468 @@
+@@ -0,0 +1,498 @@
 +/////////////////////////////////////////////////////////////////////////////
 +// Name:        src/qt/webview_android.cpp
 +// Purpose:     wxWebView backend on top of android.webkit.WebView (wxQt on Android)
@@ -2245,6 +2844,7 @@ index 0000000..7a3df45
 +    QJniObject        bridge;
 +    wxString          lastPostedBounds;
 +    bool              visible = true;
++    bool              blocked = false;
 +    wxVector<wxSharedPtr<wxWebViewHandler>> handlers;
 +
 +    bool valid() const { return bridge.isValid(); }
@@ -2285,8 +2885,23 @@ index 0000000..7a3df45
 +            return;
 +        case EV_BACK:
 +        {
-+            // the system Back key while the page had focus: close the dialog around it, like Escape would
-+            if (wxDialog* const dlg = wxDynamicCast(wxGetTopLevelParent(w), wxDialog))
++            // the system Back key while the page had focus: close the dialog around it, like Escape would. The
++            // page may also be one below a modal dialog (it kept the focus when the dialog opened): then Back
++            // belongs to that dialog.
++            wxDialog* dlg = wxDynamicCast(wxGetTopLevelParent(w), wxDialog);
++            if (!dlg || !dlg->IsModal())
++            {
++                for (wxWindowList::reverse_iterator it = wxTopLevelWindows.rbegin(); it != wxTopLevelWindows.rend(); ++it)
++                {
++                    wxDialog* const modal = wxDynamicCast(*it, wxDialog);
++                    if (modal && modal->IsModal())
++                    {
++                        dlg = modal;
++                        break;
++                    }
++                }
++            }
++            if (dlg)
 +            {
 +                if (dlg->IsModal())
 +                    dlg->EndModal(wxID_CANCEL);
@@ -2456,7 +3071,9 @@ index 0000000..7a3df45
 +    // The native view is drawn above all Qt content, so it would hide menus, dropdowns and dialogs that open
 +    // over it: take it off screen while such a window overlaps it.
 +    bool covered = false;
-+    if (IsShownOnScreen())
++    // Qt's own visibility too: a dialog Qt hid (QDialog::done()) may still count as shown for wx.
++    const bool shown = IsShownOnScreen() && qw->isVisible();
++    if (shown)
 +    {
 +        const QRect ours(qw->mapToGlobal(QPoint(0, 0)), qw->size());
 +        const QWidget* const ownWindow = qw->window();
@@ -2479,11 +3096,23 @@ index 0000000..7a3df45
 +        }
 +    }
 +
-+    const bool show = IsShownOnScreen() && !covered;
++    const bool show = shown && !covered;
 +    if (show != m_impl->visible || force)
 +    {
 +        m_impl->visible = show;
 +        m_impl->bridge.callMethod<void>("setVisible", "(Z)V", jboolean(show));
++    }
++
++    // The native view is outside Qt's modality: while a modal dialog or a popup other than our window is open,
++    // let touches fall through to the Qt window below, which blocks them (or closes the popup) like for any
++    // other control of a window that is not the active one.
++    const QWidget* const modal = QApplication::activePopupWidget() ? QApplication::activePopupWidget()
++                                                                    : QApplication::activeModalWidget();
++    const bool blocked = modal && modal != qw->window();
++    if (blocked != m_impl->blocked || force)
++    {
++        m_impl->blocked = blocked;
++        m_impl->bridge.callMethod<void>("setBlocked", "(Z)V", jboolean(blocked));
 +    }
 +    if (!show)
 +        return;
@@ -2659,13 +3288,14 @@ index 0000000..7a3df45
 +
 +#endif // wxUSE_WEBVIEW && __WXQT__ && __ANDROID__
 diff --git a/src/qt/window.cpp b/src/qt/window.cpp
-index ebc661e..4b09de8 100644
+index ebc661e..0a20506 100644
 --- a/src/qt/window.cpp
 +++ b/src/qt/window.cpp
-@@ -20,6 +20,11 @@
+@@ -20,6 +20,12 @@
  #include <QtWidgets/QMainWindow>
  #include <QtWidgets/QMenu>
  #include <QShortcut>
++#include "wx/scrolwin.h"
 +#ifdef __ANDROID__
 +#include <QtWidgets/QScroller>
 +#endif
@@ -2674,7 +3304,7 @@ index ebc661e..4b09de8 100644
  
  #ifndef WX_PRECOMP
      #include "wx/app.h"
-@@ -347,8 +352,24 @@ wxWindowQt::wxWindowQt(wxWindowQt *parent, wxWindowID id, const wxPoint& pos, co
+@@ -347,8 +353,24 @@ wxWindowQt::wxWindowQt(wxWindowQt *parent, wxWindowID id, const wxPoint& pos, co
  }
  
  
@@ -2699,7 +3329,7 @@ index ebc661e..4b09de8 100644
      if ( !m_qtWindow )
      {
          // Pseudo windows don't have a valid m_qtWindow, so just return.
-@@ -416,6 +437,10 @@ bool wxWindowQt::Create( wxWindowQt * parent, wxWindowID id, const wxPoint & pos
+@@ -416,6 +438,10 @@ bool wxWindowQt::Create( wxWindowQt * parent, wxWindowID id, const wxPoint & pos
  
      if ( m_qtContainer )
      {
@@ -2710,7 +3340,7 @@ index ebc661e..4b09de8 100644
          // If wx[HV]SCROLL is not given, the corresponding scrollbar is not shown
          // at all. Otherwise it may be shown only on demand (default) or always, if
          // the wxALWAYS_SHOW_SB is specified.
-@@ -489,9 +514,17 @@ void wxWindowQt::PostCreation(bool generic)
+@@ -489,9 +515,17 @@ void wxWindowQt::PostCreation(bool generic)
  //    SetWindowStyleFlag( style );
  //
  
@@ -2728,7 +3358,7 @@ index ebc661e..4b09de8 100644
  
      GetHandle()->setFont( wxWindowBase::GetFont().GetHandle() );
  
-@@ -516,6 +549,7 @@ void wxWindowQt::AddChild( wxWindowBase *child )
+@@ -516,6 +550,7 @@ void wxWindowQt::AddChild( wxWindowBase *child )
      wxWindowBase::AddChild( child );
  }
  
@@ -2736,7 +3366,7 @@ index ebc661e..4b09de8 100644
  bool wxWindowQt::Show( bool show )
  {
      if ( !wxWindowBase::Show( show ))
-@@ -528,6 +562,17 @@ bool wxWindowQt::Show( bool show )
+@@ -528,6 +563,17 @@ bool wxWindowQt::Show( bool show )
          qtWidget->setVisible( show );
      }
  
@@ -2754,7 +3384,41 @@ index ebc661e..4b09de8 100644
      return true;
  }
  
-@@ -567,7 +612,8 @@ bool wxWindowQt::Reparent( wxWindowBase *parent )
+@@ -543,10 +589,31 @@ wxString wxWindowQt::GetLabel() const
+     return ( wxQtConvertString( GetHandle()->windowTitle() ));
+ }
+ 
++namespace
++{
++// wx enables and disables each top-level window on its own (wxWindowDisabler disables all of them but one), but
++// a Qt window created with a parent is disabled together with that parent. Qt does allow enabling a child
++// window explicitly while its parent is disabled: do so for every child top-level window that wx has enabled,
++// or the dialog a wxWindowDisabler is meant to leave usable (e.g. Orca's settings dialog) would be dead too.
++void wxQtKeepChildWindowsEnabled(wxWindowQt* win)
++{
++    for ( wxWindowList::compatibility_iterator node = win->GetChildren().GetFirst(); node; node = node->GetNext() )
++    {
++        wxWindow* const child = node->GetData();
++        if ( child->IsTopLevel() && child->IsThisEnabled() && child->GetHandle() )
++            child->GetHandle()->setEnabled(true);
++        wxQtKeepChildWindowsEnabled(child);
++    }
++}
++} // anonymous namespace
++
+ void wxWindowQt::DoEnable(bool enable)
+ {
+-    if ( GetHandle() )
+-        GetHandle()->setEnabled(enable);
++    if ( !GetHandle() )
++        return;
++    GetHandle()->setEnabled(enable);
++    if ( !enable )
++        wxQtKeepChildWindowsEnabled(this);
+ }
+ 
+ void wxWindowQt::SetFocus()
+@@ -567,7 +634,8 @@ bool wxWindowQt::Reparent( wxWindowBase *parent )
      if ( !wxWindowBase::Reparent( parent ))
          return false;
  
@@ -2764,7 +3428,7 @@ index ebc661e..4b09de8 100644
  
      return true;
  }
-@@ -602,7 +648,14 @@ void wxWindowQt::Update()
+@@ -602,7 +670,14 @@ void wxWindowQt::Update()
  
      QWidget* const widget = wxQtGetDrawingWidget(m_qtContainer, GetHandle());
  
@@ -2779,7 +3443,7 @@ index ebc661e..4b09de8 100644
  }
  
  // Helper function to refresh the intersection area of the widget _widget_
-@@ -1253,6 +1306,12 @@ void wxWindowQt::DoSetSize(int x, int y, int width, int height, int sizeFlags )
+@@ -1253,6 +1328,25 @@ void wxWindowQt::DoSetSize(int x, int y, int width, int height, int sizeFlags )
  
      DoMoveWindow( x, y, width, height );
  
@@ -2787,12 +3451,25 @@ index ebc661e..4b09de8 100644
 +    // a child whose contents changed in the meantime (controls added to or shown in its sizer) would never be
 +    // laid out again. GTK re-allocates such children anyway; do the same.
 +    if ( width == w && height == h && GetSizer() )
-+        Layout();
++    {
++        // A scrolled window gets its virtual size from its contents on resize (wxScrollHelper::HandleOnSize):
++        // without that, after its contents changed (another settings page shown in it) it kept the old scroll
++        // range, e.g. a long empty area below a short page.
++        if ( wxScrollHelperBase* const scroll = dynamic_cast<wxScrollHelperBase*>(this) )
++        {
++            if ( scroll->GetTargetWindow() == this && GetAutoLayout() )
++                SetVirtualSize(GetBestVirtualSize());
++            else
++                Layout();
++        }
++        else
++            Layout();
++    }
 +
      // An annoying feature of Qt
      // if a control is created with size of zero, it is set as hidden by qt
      // if it is then resized, in some cases it remains hidden, so it
-@@ -1425,14 +1484,19 @@ bool wxWindowQt::QtSetBackgroundStyle()
+@@ -1425,14 +1519,19 @@ bool wxWindowQt::QtSetBackgroundStyle()
      {
          if (m_backgroundStyle == wxBG_STYLE_PAINT)
          {
@@ -2817,7 +3494,7 @@ index ebc661e..4b09de8 100644
          }
          else if (m_backgroundStyle == wxBG_STYLE_SYSTEM)
          {
-@@ -1444,8 +1508,10 @@ bool wxWindowQt::QtSetBackgroundStyle()
+@@ -1444,8 +1543,10 @@ bool wxWindowQt::QtSetBackgroundStyle()
          }
          else if (m_backgroundStyle == wxBG_STYLE_ERASE)
          {
@@ -2830,7 +3507,7 @@ index ebc661e..4b09de8 100644
              // Qt should not clear the background (default):
              widget->setAutoFillBackground(false);
          }
-@@ -1474,8 +1540,24 @@ void wxQtChangeRoleColour(QPalette::ColorRole role,
+@@ -1474,8 +1575,24 @@ void wxQtChangeRoleColour(QPalette::ColorRole role,
                            QWidget* widget,
                            const wxColour& colour)
  {
@@ -2856,7 +3533,7 @@ index ebc661e..4b09de8 100644
      widget->setPalette(palette);
  }
  
-@@ -1486,6 +1568,10 @@ bool wxWindowQt::SetBackgroundColour(const wxColour& colour)
+@@ -1486,6 +1603,10 @@ bool wxWindowQt::SetBackgroundColour(const wxColour& colour)
      if ( !wxWindowBase::SetBackgroundColour(colour) )
          return false;
  
@@ -2867,7 +3544,7 @@ index ebc661e..4b09de8 100644
      if ( colour.IsOk() )
      {
          QWidget *widget = QtGetParentWidget();
-@@ -1500,6 +1586,9 @@ bool wxWindowQt::SetForegroundColour(const wxColour& colour)
+@@ -1500,6 +1621,9 @@ bool wxWindowQt::SetForegroundColour(const wxColour& colour)
      if (!wxWindowBase::SetForegroundColour(colour))
          return false;
  
@@ -2877,7 +3554,7 @@ index ebc661e..4b09de8 100644
      QWidget *widget = QtGetParentWidget();
      wxQtChangeRoleColour(widget->foregroundRole(), widget, colour);
  
-@@ -2134,6 +2223,13 @@ bool wxWindowQt::EnableTouchEvents(int eventsMask)
+@@ -2134,6 +2258,13 @@ bool wxWindowQt::EnableTouchEvents(int eventsMask)
  {
      wxCHECK_MSG( GetHandle(), false, "can't be called before creating the window" );
  
