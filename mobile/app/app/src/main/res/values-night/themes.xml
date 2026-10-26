@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Orca" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#2D2D31</item>
+        <item name="android:navigationBarColor">#2D2D31</item>
+        <item name="android:windowBackground">#2D2D31</item>
+    </style>
+</resources>

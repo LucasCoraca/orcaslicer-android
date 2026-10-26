@@ -28,3 +28,10 @@
 /.claude/
 /android/hello-wx/
 dist-test/
+# native mobile app: Gradle state, build output, local SDK path, working notes
+/mobile/app/.gradle/
+/mobile/app/.kotlin/
+/mobile/app/build/
+/mobile/app/app/build/
+/mobile/app/local.properties
+/mobile/PLAN.md

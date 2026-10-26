@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 06ea0dbd..74f3c6a8 100644
+index 06ea0dbd6..f167679a8 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -75,6 +75,24 @@ set(CMAKE_USER_MAKE_RULES_OVERRIDE "${CMAKE_CURRENT_LIST_DIR}/cmake/modules/Clan
@@ -72,7 +72,7 @@ index 06ea0dbd..74f3c6a8 100644
  
  # Provide a minimal pybind11::embed target sourced from deps_src/pybind11 headers.
  set(PYBIND11_SOURCE_DIR "${CMAKE_SOURCE_DIR}/deps_src/pybind11")
-@@ -1251,6 +1286,12 @@ elseif (MSVC AND NOT IS_CLANG_CL)
+@@ -1251,6 +1286,16 @@ elseif (MSVC AND NOT IS_CLANG_CL)
  endif ()
  
  add_subdirectory(src)
@@ -81,12 +81,16 @@ index 06ea0dbd..74f3c6a8 100644
 +if (ANDROID AND ORCA_ANDROID_APP)
 +    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../android/app" "${CMAKE_BINARY_DIR}/android-app")
 +endif ()
++option(ORCA_MOBILE_CORE "Android: build liborcacore.so, the engine of the native mobile app (mobile/core)" OFF)
++if (ANDROID AND ORCA_MOBILE_CORE)
++    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../mobile/core" "${CMAKE_BINARY_DIR}/mobile-core")
++endif ()
 +
  set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT OrcaSlicer_app_gui)
  
  add_dependencies(gettext_make_pot hintsToPot)
 diff --git a/deps/CMakeLists.txt b/deps/CMakeLists.txt
-index 97afd164..1e2c1600 100644
+index 97afd1649..1e2c16008 100644
 --- a/deps/CMakeLists.txt
 +++ b/deps/CMakeLists.txt
 @@ -339,6 +339,9 @@ elseif (APPLE)
@@ -171,7 +175,7 @@ index 97afd164..1e2c1600 100644
  
  # Note: I'm not using any of the LOG_xxx options in ExternalProject_Add() commands
 diff --git a/deps/FFMPEG/FFMPEG.cmake b/deps/FFMPEG/FFMPEG.cmake
-index 4fd52132..a448234b 100644
+index 4fd521321..a448234bb 100644
 --- a/deps/FFMPEG/FFMPEG.cmake
 +++ b/deps/FFMPEG/FFMPEG.cmake
 @@ -56,6 +56,22 @@ else ()
@@ -198,7 +202,7 @@ index 4fd52132..a448234b 100644
          set(_link_cmd --enable-shared)
      endif ()
 diff --git a/deps/GMP/GMP.cmake b/deps/GMP/GMP.cmake
-index b3ba1817..0ecc5c9e 100644
+index b3ba18175..0ecc5c9e7 100644
 --- a/deps/GMP/GMP.cmake
 +++ b/deps/GMP/GMP.cmake
 @@ -53,6 +53,15 @@ else ()
@@ -227,7 +231,7 @@ index b3ba1817..0ecc5c9e 100644
          INSTALL_COMMAND   make install
      )
 diff --git a/deps/MPFR/MPFR.cmake b/deps/MPFR/MPFR.cmake
-index 755a7699..95d96070 100644
+index 755a76995..95d960705 100644
 --- a/deps/MPFR/MPFR.cmake
 +++ b/deps/MPFR/MPFR.cmake
 @@ -18,6 +18,17 @@ if (MSVC)
@@ -260,7 +264,7 @@ index 755a7699..95d96070 100644
          INSTALL_COMMAND make install
          DEPENDS dep_GMP
 diff --git a/deps/OpenCV/OpenCV.cmake b/deps/OpenCV/OpenCV.cmake
-index 0290b3f4..ac96a02c 100644
+index 0290b3f47..ac96a02c4 100644
 --- a/deps/OpenCV/OpenCV.cmake
 +++ b/deps/OpenCV/OpenCV.cmake
 @@ -17,6 +17,11 @@ if ("${DEPS_ARCH}" STREQUAL "arm64" AND CMAKE_CXX_COMPILER_ID STREQUAL Clang)
@@ -284,7 +288,7 @@ index 0290b3f4..ac96a02c 100644
         -DBUILD_TESTS=OFF
         -DBUILD_opencv_python_tests=OFF
 diff --git a/deps/OpenSSL/OpenSSL.cmake b/deps/OpenSSL/OpenSSL.cmake
-index 35b17ed5..640d5232 100644
+index 35b17ed50..640d5232f 100644
 --- a/deps/OpenSSL/OpenSSL.cmake
 +++ b/deps/OpenSSL/OpenSSL.cmake
 @@ -41,7 +41,17 @@ if(WIN32)
@@ -321,7 +325,7 @@ index 35b17ed5..640d5232 100644
  
          if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64" OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm64")
 diff --git a/deps/TBB/TBB.cmake b/deps/TBB/TBB.cmake
-index ce3bfd93..e9cea68b 100644
+index ce3bfd937..e9cea68bf 100644
 --- a/deps/TBB/TBB.cmake
 +++ b/deps/TBB/TBB.cmake
 @@ -2,6 +2,9 @@ if (MSVC)
@@ -336,7 +340,7 @@ index ce3bfd93..e9cea68b 100644
  endif()
 diff --git a/deps/deps-android.cmake b/deps/deps-android.cmake
 new file mode 100644
-index 00000000..67554206
+index 000000000..675542065
 --- /dev/null
 +++ b/deps/deps-android.cmake
 @@ -0,0 +1,23 @@
@@ -365,7 +369,7 @@ index 00000000..67554206
 +set(ANDROID_AUTOTOOLS_CXX "${_ndk_bin}/${TOOLCHAIN_PREFIX}${_api}-clang++")
 diff --git a/resources/shaders/ES/background.fs b/resources/shaders/ES/background.fs
 new file mode 100644
-index 00000000..2a20e3f1
+index 000000000..2a20e3f12
 --- /dev/null
 +++ b/resources/shaders/ES/background.fs
 @@ -0,0 +1,16 @@
@@ -387,7 +391,7 @@ index 00000000..2a20e3f1
 +}
 diff --git a/resources/shaders/ES/background.vs b/resources/shaders/ES/background.vs
 new file mode 100644
-index 00000000..ce4295a3
+index 000000000..ce4295a34
 --- /dev/null
 +++ b/resources/shaders/ES/background.vs
 @@ -0,0 +1,14 @@
@@ -407,7 +411,7 @@ index 00000000..ce4295a3
 +}
 diff --git a/resources/shaders/ES/dashed_lines.fs b/resources/shaders/ES/dashed_lines.fs
 new file mode 100644
-index 00000000..6d877131
+index 000000000..6d8771313
 --- /dev/null
 +++ b/resources/shaders/ES/dashed_lines.fs
 @@ -0,0 +1,19 @@
@@ -432,7 +436,7 @@ index 00000000..6d877131
 +}
 diff --git a/resources/shaders/ES/dashed_lines.vs b/resources/shaders/ES/dashed_lines.vs
 new file mode 100644
-index 00000000..17313019
+index 000000000..17313019a
 --- /dev/null
 +++ b/resources/shaders/ES/dashed_lines.vs
 @@ -0,0 +1,17 @@
@@ -455,7 +459,7 @@ index 00000000..17313019
 +}
 diff --git a/resources/shaders/ES/flat.fs b/resources/shaders/ES/flat.fs
 new file mode 100644
-index 00000000..f22798ff
+index 000000000..f22798ffd
 --- /dev/null
 +++ b/resources/shaders/ES/flat.fs
 @@ -0,0 +1,13 @@
@@ -474,7 +478,7 @@ index 00000000..f22798ff
 +}
 diff --git a/resources/shaders/ES/flat.vs b/resources/shaders/ES/flat.vs
 new file mode 100644
-index 00000000..2583ce9d
+index 000000000..2583ce9db
 --- /dev/null
 +++ b/resources/shaders/ES/flat.vs
 @@ -0,0 +1,13 @@
@@ -493,7 +497,7 @@ index 00000000..2583ce9d
 +}
 diff --git a/resources/shaders/ES/flat_clip.fs b/resources/shaders/ES/flat_clip.fs
 new file mode 100644
-index 00000000..d1df07ab
+index 000000000..d1df07ab9
 --- /dev/null
 +++ b/resources/shaders/ES/flat_clip.fs
 @@ -0,0 +1,20 @@
@@ -519,7 +523,7 @@ index 00000000..d1df07ab
 +}
 diff --git a/resources/shaders/ES/flat_clip.vs b/resources/shaders/ES/flat_clip.vs
 new file mode 100644
-index 00000000..1b95adc5
+index 000000000..1b95adc5c
 --- /dev/null
 +++ b/resources/shaders/ES/flat_clip.vs
 @@ -0,0 +1,25 @@
@@ -550,7 +554,7 @@ index 00000000..1b95adc5
 +}
 diff --git a/resources/shaders/ES/flat_texture.fs b/resources/shaders/ES/flat_texture.fs
 new file mode 100644
-index 00000000..8130bd60
+index 000000000..8130bd602
 --- /dev/null
 +++ b/resources/shaders/ES/flat_texture.fs
 @@ -0,0 +1,15 @@
@@ -571,7 +575,7 @@ index 00000000..8130bd60
 +}
 diff --git a/resources/shaders/ES/flat_texture.vs b/resources/shaders/ES/flat_texture.vs
 new file mode 100644
-index 00000000..df035384
+index 000000000..df0353843
 --- /dev/null
 +++ b/resources/shaders/ES/flat_texture.vs
 @@ -0,0 +1,17 @@
@@ -594,7 +598,7 @@ index 00000000..df035384
 +}
 diff --git a/resources/shaders/ES/fxaa.fs b/resources/shaders/ES/fxaa.fs
 new file mode 100644
-index 00000000..22fb718b
+index 000000000..22fb718b4
 --- /dev/null
 +++ b/resources/shaders/ES/fxaa.fs
 @@ -0,0 +1,55 @@
@@ -655,7 +659,7 @@ index 00000000..22fb718b
 +}
 diff --git a/resources/shaders/ES/fxaa.vs b/resources/shaders/ES/fxaa.vs
 new file mode 100644
-index 00000000..423b7519
+index 000000000..423b75191
 --- /dev/null
 +++ b/resources/shaders/ES/fxaa.vs
 @@ -0,0 +1,17 @@
@@ -678,7 +682,7 @@ index 00000000..423b7519
 +}
 diff --git a/resources/shaders/ES/gouraud.fs b/resources/shaders/ES/gouraud.fs
 new file mode 100644
-index 00000000..0698a0e3
+index 000000000..0698a0e38
 --- /dev/null
 +++ b/resources/shaders/ES/gouraud.fs
 @@ -0,0 +1,297 @@
@@ -981,7 +985,7 @@ index 00000000..0698a0e3
 +}
 diff --git a/resources/shaders/ES/gouraud.vs b/resources/shaders/ES/gouraud.vs
 new file mode 100644
-index 00000000..60d4e85f
+index 000000000..60d4e85f8
 --- /dev/null
 +++ b/resources/shaders/ES/gouraud.vs
 @@ -0,0 +1,99 @@
@@ -1086,7 +1090,7 @@ index 00000000..60d4e85f
 +}
 diff --git a/resources/shaders/ES/gouraud_light.fs b/resources/shaders/ES/gouraud_light.fs
 new file mode 100644
-index 00000000..5af2f741
+index 000000000..5af2f741b
 --- /dev/null
 +++ b/resources/shaders/ES/gouraud_light.fs
 @@ -0,0 +1,17 @@
@@ -1109,7 +1113,7 @@ index 00000000..5af2f741
 +}
 diff --git a/resources/shaders/ES/gouraud_light.vs b/resources/shaders/ES/gouraud_light.vs
 new file mode 100644
-index 00000000..81711409
+index 000000000..81711409f
 --- /dev/null
 +++ b/resources/shaders/ES/gouraud_light.vs
 @@ -0,0 +1,47 @@
@@ -1162,7 +1166,7 @@ index 00000000..81711409
 +}
 diff --git a/resources/shaders/ES/gouraud_light_instanced.fs b/resources/shaders/ES/gouraud_light_instanced.fs
 new file mode 100644
-index 00000000..5af2f741
+index 000000000..5af2f741b
 --- /dev/null
 +++ b/resources/shaders/ES/gouraud_light_instanced.fs
 @@ -0,0 +1,17 @@
@@ -1185,7 +1189,7 @@ index 00000000..5af2f741
 +}
 diff --git a/resources/shaders/ES/gouraud_light_instanced.vs b/resources/shaders/ES/gouraud_light_instanced.vs
 new file mode 100644
-index 00000000..9f6b9940
+index 000000000..9f6b99402
 --- /dev/null
 +++ b/resources/shaders/ES/gouraud_light_instanced.vs
 @@ -0,0 +1,52 @@
@@ -1243,7 +1247,7 @@ index 00000000..9f6b9940
 +}
 diff --git a/resources/shaders/ES/hotbed.fs b/resources/shaders/ES/hotbed.fs
 new file mode 100644
-index 00000000..7d72edbd
+index 000000000..7d72edbd4
 --- /dev/null
 +++ b/resources/shaders/ES/hotbed.fs
 @@ -0,0 +1,49 @@
@@ -1298,7 +1302,7 @@ index 00000000..7d72edbd
 +}
 diff --git a/resources/shaders/ES/hotbed.vs b/resources/shaders/ES/hotbed.vs
 new file mode 100644
-index 00000000..c7483b2d
+index 000000000..c7483b2d7
 --- /dev/null
 +++ b/resources/shaders/ES/hotbed.vs
 @@ -0,0 +1,49 @@
@@ -1353,7 +1357,7 @@ index 00000000..c7483b2d
 +}
 diff --git a/resources/shaders/ES/imgui.fs b/resources/shaders/ES/imgui.fs
 new file mode 100644
-index 00000000..ebbfbbc4
+index 000000000..ebbfbbc4d
 --- /dev/null
 +++ b/resources/shaders/ES/imgui.fs
 @@ -0,0 +1,16 @@
@@ -1375,7 +1379,7 @@ index 00000000..ebbfbbc4
 +}
 diff --git a/resources/shaders/ES/imgui.vs b/resources/shaders/ES/imgui.vs
 new file mode 100644
-index 00000000..2f1073b8
+index 000000000..2f1073b8a
 --- /dev/null
 +++ b/resources/shaders/ES/imgui.vs
 @@ -0,0 +1,19 @@
@@ -1400,7 +1404,7 @@ index 00000000..2f1073b8
 +}
 diff --git a/resources/shaders/ES/mm_contour.fs b/resources/shaders/ES/mm_contour.fs
 new file mode 100644
-index 00000000..f22798ff
+index 000000000..f22798ffd
 --- /dev/null
 +++ b/resources/shaders/ES/mm_contour.fs
 @@ -0,0 +1,13 @@
@@ -1419,7 +1423,7 @@ index 00000000..f22798ff
 +}
 diff --git a/resources/shaders/ES/mm_contour.vs b/resources/shaders/ES/mm_contour.vs
 new file mode 100644
-index 00000000..6a01e8a5
+index 000000000..6a01e8a5f
 --- /dev/null
 +++ b/resources/shaders/ES/mm_contour.vs
 @@ -0,0 +1,17 @@
@@ -1442,7 +1446,7 @@ index 00000000..6a01e8a5
 +}
 diff --git a/resources/shaders/ES/mm_gouraud.fs b/resources/shaders/ES/mm_gouraud.fs
 new file mode 100644
-index 00000000..ab9bf473
+index 000000000..ab9bf473b
 --- /dev/null
 +++ b/resources/shaders/ES/mm_gouraud.fs
 @@ -0,0 +1,125 @@
@@ -1573,7 +1577,7 @@ index 00000000..ab9bf473
 +}
 diff --git a/resources/shaders/ES/mm_gouraud.vs b/resources/shaders/ES/mm_gouraud.vs
 new file mode 100644
-index 00000000..71afc678
+index 000000000..71afc678f
 --- /dev/null
 +++ b/resources/shaders/ES/mm_gouraud.vs
 @@ -0,0 +1,44 @@
@@ -1623,7 +1627,7 @@ index 00000000..71afc678
 +}
 diff --git a/resources/shaders/ES/phong.fs b/resources/shaders/ES/phong.fs
 new file mode 100644
-index 00000000..4c325a90
+index 000000000..4c325a904
 --- /dev/null
 +++ b/resources/shaders/ES/phong.fs
 @@ -0,0 +1,371 @@
@@ -2000,7 +2004,7 @@ index 00000000..4c325a90
 +}
 diff --git a/resources/shaders/ES/phong.vs b/resources/shaders/ES/phong.vs
 new file mode 100644
-index 00000000..2b6624d3
+index 000000000..2b6624d30
 --- /dev/null
 +++ b/resources/shaders/ES/phong.vs
 @@ -0,0 +1,68 @@
@@ -2074,7 +2078,7 @@ index 00000000..2b6624d3
 +}
 diff --git a/resources/shaders/ES/printbed.fs b/resources/shaders/ES/printbed.fs
 new file mode 100644
-index 00000000..6391ff89
+index 000000000..6391ff891
 --- /dev/null
 +++ b/resources/shaders/ES/printbed.fs
 @@ -0,0 +1,38 @@
@@ -2118,7 +2122,7 @@ index 00000000..6391ff89
 +}
 diff --git a/resources/shaders/ES/printbed.vs b/resources/shaders/ES/printbed.vs
 new file mode 100644
-index 00000000..df035384
+index 000000000..df0353843
 --- /dev/null
 +++ b/resources/shaders/ES/printbed.vs
 @@ -0,0 +1,17 @@
@@ -2141,7 +2145,7 @@ index 00000000..df035384
 +}
 diff --git a/resources/shaders/ES/printbed_shadow.fs b/resources/shaders/ES/printbed_shadow.fs
 new file mode 100644
-index 00000000..0ea0d892
+index 000000000..0ea0d8929
 --- /dev/null
 +++ b/resources/shaders/ES/printbed_shadow.fs
 @@ -0,0 +1,49 @@
@@ -2196,7 +2200,7 @@ index 00000000..0ea0d892
 +}
 diff --git a/resources/shaders/ES/printbed_shadow.vs b/resources/shaders/ES/printbed_shadow.vs
 new file mode 100644
-index 00000000..3a5f7aa7
+index 000000000..3a5f7aa73
 --- /dev/null
 +++ b/resources/shaders/ES/printbed_shadow.vs
 @@ -0,0 +1,18 @@
@@ -2220,7 +2224,7 @@ index 00000000..3a5f7aa7
 +}
 diff --git a/resources/shaders/ES/ssao.fs b/resources/shaders/ES/ssao.fs
 new file mode 100644
-index 00000000..914578b9
+index 000000000..914578b9d
 --- /dev/null
 +++ b/resources/shaders/ES/ssao.fs
 @@ -0,0 +1,123 @@
@@ -2349,7 +2353,7 @@ index 00000000..914578b9
 +}
 diff --git a/resources/shaders/ES/ssao.vs b/resources/shaders/ES/ssao.vs
 new file mode 100644
-index 00000000..423b7519
+index 000000000..423b75191
 --- /dev/null
 +++ b/resources/shaders/ES/ssao.vs
 @@ -0,0 +1,17 @@
@@ -2372,7 +2376,7 @@ index 00000000..423b7519
 +}
 diff --git a/resources/shaders/ES/texture_displacement_shaded.fs b/resources/shaders/ES/texture_displacement_shaded.fs
 new file mode 100644
-index 00000000..33d1b39d
+index 000000000..33d1b39d3
 --- /dev/null
 +++ b/resources/shaders/ES/texture_displacement_shaded.fs
 @@ -0,0 +1,450 @@
@@ -2828,7 +2832,7 @@ index 00000000..33d1b39d
 +}
 diff --git a/resources/shaders/ES/texture_displacement_shaded.vs b/resources/shaders/ES/texture_displacement_shaded.vs
 new file mode 100644
-index 00000000..7ec9de10
+index 000000000..7ec9de107
 --- /dev/null
 +++ b/resources/shaders/ES/texture_displacement_shaded.vs
 @@ -0,0 +1,46 @@
@@ -2880,7 +2884,7 @@ index 00000000..7ec9de10
 +}
 diff --git a/resources/shaders/ES/texture_displacement_uvcheck.fs b/resources/shaders/ES/texture_displacement_uvcheck.fs
 new file mode 100644
-index 00000000..512858d7
+index 000000000..512858d7b
 --- /dev/null
 +++ b/resources/shaders/ES/texture_displacement_uvcheck.fs
 @@ -0,0 +1,142 @@
@@ -3028,7 +3032,7 @@ index 00000000..512858d7
 +}
 diff --git a/resources/shaders/ES/texture_displacement_uvcheck.vs b/resources/shaders/ES/texture_displacement_uvcheck.vs
 new file mode 100644
-index 00000000..a3ebeb3e
+index 000000000..a3ebeb3e2
 --- /dev/null
 +++ b/resources/shaders/ES/texture_displacement_uvcheck.vs
 @@ -0,0 +1,38 @@
@@ -3072,7 +3076,7 @@ index 00000000..a3ebeb3e
 +}
 diff --git a/resources/shaders/ES/thumbnail.fs b/resources/shaders/ES/thumbnail.fs
 new file mode 100644
-index 00000000..dd0993b0
+index 000000000..dd0993b0f
 --- /dev/null
 +++ b/resources/shaders/ES/thumbnail.fs
 @@ -0,0 +1,26 @@
@@ -3104,7 +3108,7 @@ index 00000000..dd0993b0
 +}
 diff --git a/resources/shaders/ES/thumbnail.vs b/resources/shaders/ES/thumbnail.vs
 new file mode 100644
-index 00000000..520b8625
+index 000000000..520b86254
 --- /dev/null
 +++ b/resources/shaders/ES/thumbnail.vs
 @@ -0,0 +1,52 @@
@@ -3162,7 +3166,7 @@ index 00000000..520b8625
 +}
 diff --git a/resources/shaders/ES/variable_layer_height.fs b/resources/shaders/ES/variable_layer_height.fs
 new file mode 100644
-index 00000000..fcb0b040
+index 000000000..fcb0b0402
 --- /dev/null
 +++ b/resources/shaders/ES/variable_layer_height.fs
 @@ -0,0 +1,46 @@
@@ -3214,7 +3218,7 @@ index 00000000..fcb0b040
 +}
 diff --git a/resources/shaders/ES/variable_layer_height.vs b/resources/shaders/ES/variable_layer_height.vs
 new file mode 100644
-index 00000000..62d34189
+index 000000000..62d341897
 --- /dev/null
 +++ b/resources/shaders/ES/variable_layer_height.vs
 @@ -0,0 +1,62 @@
@@ -3282,7 +3286,7 @@ index 00000000..62d34189
 +}
 diff --git a/resources/shaders/ES/wireframe.fs b/resources/shaders/ES/wireframe.fs
 new file mode 100644
-index 00000000..4dfa3c00
+index 000000000..4dfa3c005
 --- /dev/null
 +++ b/resources/shaders/ES/wireframe.fs
 @@ -0,0 +1,19 @@
@@ -3307,7 +3311,7 @@ index 00000000..4dfa3c00
 +}
 diff --git a/resources/shaders/ES/wireframe.vs b/resources/shaders/ES/wireframe.vs
 new file mode 100644
-index 00000000..32778362
+index 000000000..327783627
 --- /dev/null
 +++ b/resources/shaders/ES/wireframe.vs
 @@ -0,0 +1,19 @@
@@ -3332,7 +3336,7 @@ index 00000000..32778362
 +}
 diff --git a/resources/shaders/ES/xray.fs b/resources/shaders/ES/xray.fs
 new file mode 100644
-index 00000000..0d249e04
+index 000000000..0d249e046
 --- /dev/null
 +++ b/resources/shaders/ES/xray.fs
 @@ -0,0 +1,33 @@
@@ -3371,7 +3375,7 @@ index 00000000..0d249e04
 +}
 diff --git a/resources/shaders/ES/xray.vs b/resources/shaders/ES/xray.vs
 new file mode 100644
-index 00000000..dcc4ed59
+index 000000000..dcc4ed59a
 --- /dev/null
 +++ b/resources/shaders/ES/xray.vs
 @@ -0,0 +1,33 @@
@@ -3409,7 +3413,7 @@ index 00000000..dcc4ed59
 +    gl_Position = projection_matrix * position;
 +}
 diff --git a/resources/web/dialog/SpeedDial/speeddial.js b/resources/web/dialog/SpeedDial/speeddial.js
-index 5ec47e91..7022306a 100644
+index 5ec47e916..7022306ab 100644
 --- a/resources/web/dialog/SpeedDial/speeddial.js
 +++ b/resources/web/dialog/SpeedDial/speeddial.js
 @@ -1,3 +1,6 @@
@@ -3439,7 +3443,7 @@ index 5ec47e91..7022306a 100644
      return shell.row;
  }
 diff --git a/resources/web/homepage/css/home.css b/resources/web/homepage/css/home.css
-index a90a8520..2dee910c 100644
+index a90a8520b..2dee910c2 100644
 --- a/resources/web/homepage/css/home.css
 +++ b/resources/web/homepage/css/home.css
 @@ -1108,3 +1108,55 @@ body.cloud-mode #LeftBoard
@@ -3499,7 +3503,7 @@ index a90a8520..2dee910c 100644
 +	}
 +}
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index c8d882f2..98b99a19 100644
+index c8d882f29..98b99a19b 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
 @@ -14,7 +14,11 @@ find_package(libnoise REQUIRED)
@@ -3562,7 +3566,7 @@ index c8d882f2..98b99a19 100644
      # OrcaSlicer_profile_validator
      if(APPLE)
 diff --git a/src/OrcaSlicer.cpp b/src/OrcaSlicer.cpp
-index 48ddd16a..2dd96b05 100644
+index 48ddd16a3..2dd96b05f 100644
 --- a/src/OrcaSlicer.cpp
 +++ b/src/OrcaSlicer.cpp
 @@ -1418,7 +1418,7 @@ int CLI::run(int argc, char **argv)
@@ -3613,7 +3617,7 @@ index 48ddd16a..2dd96b05 100644
      // network connection) returns EPIPE to the caller instead of terminating
 diff --git a/src/glad-gles/CMakeLists.txt b/src/glad-gles/CMakeLists.txt
 new file mode 100644
-index 00000000..323eb3b2
+index 000000000..323eb3b26
 --- /dev/null
 +++ b/src/glad-gles/CMakeLists.txt
 @@ -0,0 +1,4 @@
@@ -3623,7 +3627,7 @@ index 00000000..323eb3b2
 +target_link_libraries(glad PRIVATE ${CMAKE_DL_LIBS})
 diff --git a/src/glad-gles/README b/src/glad-gles/README
 new file mode 100644
-index 00000000..4afffafe
+index 000000000..4afffafec
 --- /dev/null
 +++ b/src/glad-gles/README
 @@ -0,0 +1,2 @@
@@ -3631,7 +3635,7 @@ index 00000000..4afffafe
 +glad/gl.h is hand written (compat wrapper).
 diff --git a/src/glad-gles/include/EGL/eglplatform.h b/src/glad-gles/include/EGL/eglplatform.h
 new file mode 100644
-index 00000000..6786afd9
+index 000000000..6786afd90
 --- /dev/null
 +++ b/src/glad-gles/include/EGL/eglplatform.h
 @@ -0,0 +1,175 @@
@@ -3812,7 +3816,7 @@ index 00000000..6786afd9
 +#endif /* __eglplatform_h */
 diff --git a/src/glad-gles/include/KHR/khrplatform.h b/src/glad-gles/include/KHR/khrplatform.h
 new file mode 100644
-index 00000000..01646449
+index 000000000..01646449c
 --- /dev/null
 +++ b/src/glad-gles/include/KHR/khrplatform.h
 @@ -0,0 +1,311 @@
@@ -4129,7 +4133,7 @@ index 00000000..01646449
 +#endif /* __khrplatform_h_ */
 diff --git a/src/glad-gles/include/glad/egl.h b/src/glad-gles/include/glad/egl.h
 new file mode 100644
-index 00000000..677865b8
+index 000000000..677865b8d
 --- /dev/null
 +++ b/src/glad-gles/include/glad/egl.h
 @@ -0,0 +1,550 @@
@@ -4685,7 +4689,7 @@ index 00000000..677865b8
 +#endif
 diff --git a/src/glad-gles/include/glad/gl.h b/src/glad-gles/include/glad/gl.h
 new file mode 100644
-index 00000000..c944cdc5
+index 000000000..c944cdc55
 --- /dev/null
 +++ b/src/glad-gles/include/glad/gl.h
 @@ -0,0 +1,54 @@
@@ -4745,7 +4749,7 @@ index 00000000..c944cdc5
 +static inline void glDrawBuffer(GLenum mode) { glDrawBuffers(1, &mode); }
 diff --git a/src/glad-gles/include/glad/gles2.h b/src/glad-gles/include/glad/gles2.h
 new file mode 100644
-index 00000000..1b9c7f19
+index 000000000..1b9c7f19d
 --- /dev/null
 +++ b/src/glad-gles/include/glad/gles2.h
 @@ -0,0 +1,2447 @@
@@ -7198,7 +7202,7 @@ index 00000000..1b9c7f19
 +#endif
 diff --git a/src/glad-gles/src/egl.c b/src/glad-gles/src/egl.c
 new file mode 100644
-index 00000000..da49b4e1
+index 000000000..da49b4e14
 --- /dev/null
 +++ b/src/glad-gles/src/egl.c
 @@ -0,0 +1,397 @@
@@ -7601,7 +7605,7 @@ index 00000000..da49b4e1
 +#endif
 diff --git a/src/glad-gles/src/gles2.c b/src/glad-gles/src/gles2.c
 new file mode 100644
-index 00000000..70fe24dd
+index 000000000..70fe24ddc
 --- /dev/null
 +++ b/src/glad-gles/src/gles2.c
 @@ -0,0 +1,1147 @@
@@ -8753,7 +8757,7 @@ index 00000000..70fe24dd
 +}
 +#endif
 diff --git a/src/libslic3r/AppConfig.cpp b/src/libslic3r/AppConfig.cpp
-index 98efc032..2f3392fc 100644
+index 98efc032b..2f3392fc6 100644
 --- a/src/libslic3r/AppConfig.cpp
 +++ b/src/libslic3r/AppConfig.cpp
 @@ -387,7 +387,11 @@ void AppConfig::set_defaults()
@@ -8769,7 +8773,7 @@ index 98efc032..2f3392fc 100644
      if (get("show_3d_navigator").empty())
          set_bool("show_3d_navigator", true);
 diff --git a/src/libslic3r/CMakeLists.txt b/src/libslic3r/CMakeLists.txt
-index fa9aec85..c2c95918 100644
+index fa9aec853..c2c959185 100644
 --- a/src/libslic3r/CMakeLists.txt
 +++ b/src/libslic3r/CMakeLists.txt
 @@ -673,7 +673,13 @@ target_include_directories(libslic3r PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE
@@ -8797,7 +8801,7 @@ index fa9aec85..c2c95918 100644
      endif()
  endif()
 diff --git a/src/libvgcode/CMakeLists.txt b/src/libvgcode/CMakeLists.txt
-index b17fff36..748c1c71 100644
+index b17fff360..748c1c716 100644
 --- a/src/libvgcode/CMakeLists.txt
 +++ b/src/libvgcode/CMakeLists.txt
 @@ -2,7 +2,10 @@ cmake_minimum_required(VERSION 3.13)
@@ -8824,7 +8828,7 @@ index b17fff36..748c1c71 100644
  else ()
      target_link_libraries(libvgcode PUBLIC glad)
 diff --git a/src/libvgcode/src/OpenGLUtils.cpp b/src/libvgcode/src/OpenGLUtils.cpp
-index c6617af5..a9e4d04e 100644
+index c6617af50..a9e4d04ea 100644
 --- a/src/libvgcode/src/OpenGLUtils.cpp
 +++ b/src/libvgcode/src/OpenGLUtils.cpp
 @@ -5,6 +5,10 @@
@@ -8863,7 +8867,7 @@ index c6617af5..a9e4d04e 100644
  #else
      gladLoaderUnloadGL();
 diff --git a/src/slic3r/CMakeLists.txt b/src/slic3r/CMakeLists.txt
-index 367aadaa..2f1a1907 100644
+index 367aadaa2..2f1a19073 100644
 --- a/src/slic3r/CMakeLists.txt
 +++ b/src/slic3r/CMakeLists.txt
 @@ -951,7 +951,18 @@ else()
@@ -8914,7 +8918,7 @@ index 367aadaa..2f1a1907 100644
      find_package(GTK${SLIC3R_GTK} REQUIRED)
      pkg_check_modules(LIBSECRET REQUIRED libsecret-1)
 diff --git a/src/slic3r/GUI/3DScene.cpp b/src/slic3r/GUI/3DScene.cpp
-index acd2e4f4..bf048c69 100644
+index acd2e4f41..bf048c693 100644
 --- a/src/slic3r/GUI/3DScene.cpp
 +++ b/src/slic3r/GUI/3DScene.cpp
 @@ -71,7 +71,7 @@
@@ -8945,7 +8949,7 @@ index acd2e4f4..bf048c69 100644
              glsafe(::glDeleteFramebuffers(1, &depth_fbo));
      } else if (framebuffers_type == GUI::OpenGLManager::EFramebufferType::Ext) {
 diff --git a/src/slic3r/GUI/3DScene.hpp b/src/slic3r/GUI/3DScene.hpp
-index 7a19b20a..96079a3d 100644
+index 7a19b20a2..96079a3d2 100644
 --- a/src/slic3r/GUI/3DScene.hpp
 +++ b/src/slic3r/GUI/3DScene.hpp
 @@ -28,7 +28,10 @@
@@ -8961,7 +8965,7 @@ index 7a19b20a..96079a3d 100644
  #endif // NDEBUG
  
 diff --git a/src/slic3r/GUI/BBLTopbar.cpp b/src/slic3r/GUI/BBLTopbar.cpp
-index eb85b941..b5b0d4ed 100644
+index eb85b9413..b5b0d4ede 100644
 --- a/src/slic3r/GUI/BBLTopbar.cpp
 +++ b/src/slic3r/GUI/BBLTopbar.cpp
 @@ -253,7 +253,7 @@ void BBLTopbar::Init(wxFrame* parent)
@@ -9047,7 +9051,7 @@ index eb85b941..b5b0d4ed 100644
      Realize();
  }
 diff --git a/src/slic3r/GUI/BBLTopbar.hpp b/src/slic3r/GUI/BBLTopbar.hpp
-index bad07274..89dd4a9b 100644
+index bad072745..89dd4a9b3 100644
 --- a/src/slic3r/GUI/BBLTopbar.hpp
 +++ b/src/slic3r/GUI/BBLTopbar.hpp
 @@ -104,7 +104,7 @@ private:
@@ -9060,7 +9064,7 @@ index bad07274..89dd4a9b 100644
  
      wxBitmap maximize_bitmap;
 diff --git a/src/slic3r/GUI/CalibrationWizardPage.cpp b/src/slic3r/GUI/CalibrationWizardPage.cpp
-index 36c8ca20..39d4f2e7 100644
+index 36c8ca207..39d4f2e77 100644
 --- a/src/slic3r/GUI/CalibrationWizardPage.cpp
 +++ b/src/slic3r/GUI/CalibrationWizardPage.cpp
 @@ -474,7 +474,7 @@ CaliPageCaption::CaliPageCaption(wxWindow* parent, CalibMode cali_mode,
@@ -9099,7 +9103,7 @@ index 36c8ca20..39d4f2e7 100644
  
  
 diff --git a/src/slic3r/GUI/CalibrationWizardStartPage.cpp b/src/slic3r/GUI/CalibrationWizardStartPage.cpp
-index 6fcfbb0a..ff9655a1 100644
+index 6fcfbb0ae..ff9655a16 100644
 --- a/src/slic3r/GUI/CalibrationWizardStartPage.cpp
 +++ b/src/slic3r/GUI/CalibrationWizardStartPage.cpp
 @@ -136,7 +136,7 @@ void CalibrationPAStartPage::create_page(wxWindow* parent)
@@ -9121,7 +9125,7 @@ index 6fcfbb0a..ff9655a1 100644
          m_when_content->SetMinSize(m_when_content->GetSize() + wxSize{ 0, wxWindow::GetCharHeight() });
          auto_cali_content->SetMinSize(auto_cali_content->GetSize() + wxSize{ 0, wxWindow::GetCharHeight() });
 diff --git a/src/slic3r/GUI/Camera.cpp b/src/slic3r/GUI/Camera.cpp
-index ff975054..2110bdc2 100644
+index ff9750548..2110bdc28 100644
 --- a/src/slic3r/GUI/Camera.cpp
 +++ b/src/slic3r/GUI/Camera.cpp
 @@ -699,6 +699,19 @@ void Camera::load_camera_view(Camera& cam)
@@ -9145,7 +9149,7 @@ index ff975054..2110bdc2 100644
  {
      const Vec3d unit_z = (position - target).normalized();
 diff --git a/src/slic3r/GUI/Camera.hpp b/src/slic3r/GUI/Camera.hpp
-index 5e8d6781..832ad736 100644
+index 5e8d6781e..832ad736a 100644
 --- a/src/slic3r/GUI/Camera.hpp
 +++ b/src/slic3r/GUI/Camera.hpp
 @@ -184,6 +184,10 @@ public:
@@ -9160,7 +9164,7 @@ index 5e8d6781..832ad736 100644
      double min_zoom() const { return 0.2 * calc_zoom_to_bounding_box_factor(m_scene_box); }
  
 diff --git a/src/slic3r/GUI/ColorPickerDialog.cpp b/src/slic3r/GUI/ColorPickerDialog.cpp
-index 086eae3a..ca42abf5 100644
+index 086eae3a7..ca42abf53 100644
 --- a/src/slic3r/GUI/ColorPickerDialog.cpp
 +++ b/src/slic3r/GUI/ColorPickerDialog.cpp
 @@ -32,7 +32,7 @@
@@ -9191,7 +9195,7 @@ index 086eae3a..ca42abf5 100644
          gtk_widget_queue_draw(static_cast<GtkWidget*>(backend));
  #else
 diff --git a/src/slic3r/GUI/FrameProfiler.cpp b/src/slic3r/GUI/FrameProfiler.cpp
-index 6012f64e..14ebe7d9 100644
+index 6012f64ef..14ebe7d91 100644
 --- a/src/slic3r/GUI/FrameProfiler.cpp
 +++ b/src/slic3r/GUI/FrameProfiler.cpp
 @@ -15,11 +15,18 @@
@@ -9224,7 +9228,7 @@ index 6012f64e..14ebe7d9 100644
      std::vector<Section> averages = std::move(m_sums);
      for (Section& section : averages) {
 diff --git a/src/slic3r/GUI/GCodeViewer.hpp b/src/slic3r/GUI/GCodeViewer.hpp
-index c07b063c..83b27535 100644
+index c07b063cb..83b275359 100644
 --- a/src/slic3r/GUI/GCodeViewer.hpp
 +++ b/src/slic3r/GUI/GCodeViewer.hpp
 @@ -232,7 +232,11 @@ private:
@@ -9240,7 +9244,7 @@ index c07b063c..83b27535 100644
  
      // IDEX/IQEX: everything render_scene() needs to place the secondary carriage markers and the
 diff --git a/src/slic3r/GUI/GLCanvas3D.cpp b/src/slic3r/GUI/GLCanvas3D.cpp
-index 95944a8d..1dc607b2 100644
+index 95944a8da..1dc607b22 100644
 --- a/src/slic3r/GUI/GLCanvas3D.cpp
 +++ b/src/slic3r/GUI/GLCanvas3D.cpp
 @@ -236,12 +236,12 @@ static void pan_camera(Camera& camera, const Vec2d& screen_delta, const Vec3d& a
@@ -9674,7 +9678,7 @@ index 95944a8d..1dc607b2 100644
      const float top = 0.5f * (float)cnv_size.get_height();
      const float main_toolbar_left = -0.5f * cnv_size.get_width() + get_main_toolbar_offset();
 diff --git a/src/slic3r/GUI/GLCanvas3D.hpp b/src/slic3r/GUI/GLCanvas3D.hpp
-index e4838598..1dca84e6 100644
+index e48385982..1dca84e68 100644
 --- a/src/slic3r/GUI/GLCanvas3D.hpp
 +++ b/src/slic3r/GUI/GLCanvas3D.hpp
 @@ -76,7 +76,7 @@ struct ImDrawData;
@@ -9735,7 +9739,7 @@ index e4838598..1dca84e6 100644
      {
          return m_enable_render;
 diff --git a/src/slic3r/GUI/GLModel.cpp b/src/slic3r/GUI/GLModel.cpp
-index 52526e0e..259ee55e 100644
+index 52526e0e1..259ee55e2 100644
 --- a/src/slic3r/GUI/GLModel.cpp
 +++ b/src/slic3r/GUI/GLModel.cpp
 @@ -677,13 +677,15 @@ void GLModel::render(const std::pair<size_t, size_t>& range, GLShaderProgram* sh
@@ -9791,7 +9795,7 @@ index 52526e0e..259ee55e 100644
      glsafe(::glBindBuffer(GL_ARRAY_BUFFER, 0));
  #if !SLIC3R_OPENGL_ES
 diff --git a/src/slic3r/GUI/GLShadersManager.cpp b/src/slic3r/GUI/GLShadersManager.cpp
-index 003f994a..4ed8b7df 100644
+index 003f994a2..4ed8b7df8 100644
 --- a/src/slic3r/GUI/GLShadersManager.cpp
 +++ b/src/slic3r/GUI/GLShadersManager.cpp
 @@ -113,10 +113,20 @@ std::pair<bool, std::string> GLShadersManager::init()
@@ -9816,7 +9820,7 @@ index 003f994a..4ed8b7df 100644
      return { valid, error };
  }
 diff --git a/src/slic3r/GUI/GUI_App.cpp b/src/slic3r/GUI/GUI_App.cpp
-index b9e11922..4580542e 100644
+index b9e119220..4580542e5 100644
 --- a/src/slic3r/GUI/GUI_App.cpp
 +++ b/src/slic3r/GUI/GUI_App.cpp
 @@ -106,6 +106,9 @@
@@ -9910,7 +9914,7 @@ index b9e11922..4580542e 100644
      bool       check_stable_only = app_config->get_bool("check_stable_update_only");
      auto version_check_url = app_config->version_check_url();
 diff --git a/src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp b/src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
-index 3232041e..019ad41a 100644
+index 3232041e4..019ad41a5 100644
 --- a/src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
 +++ b/src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
 @@ -1616,12 +1616,12 @@ void GLGizmoMeasure::render_dimensioning()
@@ -9930,7 +9934,7 @@ index 3232041e..019ad41a 100644
          ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
          m_imgui->begin(wxString("##angle"), ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
 diff --git a/src/slic3r/GUI/Gizmos/GLGizmoSimplify.cpp b/src/slic3r/GUI/Gizmos/GLGizmoSimplify.cpp
-index 536a5623..79d075cb 100644
+index 536a5623a..79d075cb7 100644
 --- a/src/slic3r/GUI/Gizmos/GLGizmoSimplify.cpp
 +++ b/src/slic3r/GUI/Gizmos/GLGizmoSimplify.cpp
 @@ -714,7 +714,9 @@ void GLGizmoSimplify::on_render()
@@ -9944,7 +9948,7 @@ index 536a5623..79d075cb 100644
  
  
 diff --git a/src/slic3r/GUI/Gizmos/GLGizmosCommon.cpp b/src/slic3r/GUI/Gizmos/GLGizmosCommon.cpp
-index e391022d..731eee9b 100644
+index e391022d6..731eee9be 100644
 --- a/src/slic3r/GUI/Gizmos/GLGizmosCommon.cpp
 +++ b/src/slic3r/GUI/Gizmos/GLGizmosCommon.cpp
 @@ -214,10 +214,11 @@ void InstancesHider::render_cut() const
@@ -9962,7 +9966,7 @@ index e391022d..731eee9b 100644
          ++clipper_id;
      }
 diff --git a/src/slic3r/GUI/Gizmos/GLGizmosManager.cpp b/src/slic3r/GUI/Gizmos/GLGizmosManager.cpp
-index 31939161..6e5e7ce7 100644
+index 319391612..6e5e7ce79 100644
 --- a/src/slic3r/GUI/Gizmos/GLGizmosManager.cpp
 +++ b/src/slic3r/GUI/Gizmos/GLGizmosManager.cpp
 @@ -130,6 +130,18 @@ GLGizmosManager::EType GLGizmosManager::get_gizmo_from_mouse(const Vec2d &mouse_
@@ -10066,7 +10070,7 @@ index 31939161..6e5e7ce7 100644
  #if BBS_TOOLBAR_ON_TOP
      return m_layout.scale * (2.0f * m_layout.border + (float)get_selectable_idxs().size() * m_layout.stride_x() - m_layout.gap_x);
 diff --git a/src/slic3r/GUI/Gizmos/GLGizmosManager.hpp b/src/slic3r/GUI/Gizmos/GLGizmosManager.hpp
-index d08b50f6..17384366 100644
+index d08b50f61..173843660 100644
 --- a/src/slic3r/GUI/Gizmos/GLGizmosManager.hpp
 +++ b/src/slic3r/GUI/Gizmos/GLGizmosManager.hpp
 @@ -110,6 +110,7 @@ public:
@@ -10098,7 +10102,7 @@ index d08b50f6..17384366 100644
      GizmoObjectManipulation& get_object_manipulation() { return m_object_manipulation; }
      bool get_uniform_scaling() const { return m_object_manipulation.get_uniform_scaling();}
 diff --git a/src/slic3r/GUI/IMToolbar.cpp b/src/slic3r/GUI/IMToolbar.cpp
-index 6a885f47..f2eca04a 100644
+index 6a885f473..f2eca04ae 100644
 --- a/src/slic3r/GUI/IMToolbar.cpp
 +++ b/src/slic3r/GUI/IMToolbar.cpp
 @@ -1,6 +1,7 @@
@@ -10119,7 +10123,7 @@ index 6a885f47..f2eca04a 100644
      else
          glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, data.width, data.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels));
 diff --git a/src/slic3r/GUI/ImGuiWrapper.cpp b/src/slic3r/GUI/ImGuiWrapper.cpp
-index 9ce8d79e..e6a27c5d 100644
+index 9ce8d79e4..e6a27c5d9 100644
 --- a/src/slic3r/GUI/ImGuiWrapper.cpp
 +++ b/src/slic3r/GUI/ImGuiWrapper.cpp
 @@ -3047,7 +3047,7 @@ void ImGuiWrapper::init_font(bool compress)
@@ -10132,7 +10136,7 @@ index 9ce8d79e..e6a27c5d 100644
      else
          glsafe(::glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels));
 diff --git a/src/slic3r/GUI/InstanceCheck.cpp b/src/slic3r/GUI/InstanceCheck.cpp
-index d8365be9..0d6c95b8 100644
+index d8365be97..0d6c95b8f 100644
 --- a/src/slic3r/GUI/InstanceCheck.cpp
 +++ b/src/slic3r/GUI/InstanceCheck.cpp
 @@ -42,7 +42,7 @@
@@ -10181,7 +10185,7 @@ index d8365be9..0d6c95b8 100644
  	// see https://docs.appimage.org/packaging-guide/environment-variables.html#id2
  	const char *appimage_env = std::getenv("APPIMAGE");
 diff --git a/src/slic3r/GUI/InstanceCheck.hpp b/src/slic3r/GUI/InstanceCheck.hpp
-index 635004e2..7632d1b4 100644
+index 635004e2e..7632d1b46 100644
 --- a/src/slic3r/GUI/InstanceCheck.hpp
 +++ b/src/slic3r/GUI/InstanceCheck.hpp
 @@ -16,7 +16,7 @@
@@ -10203,7 +10207,7 @@ index 635004e2..7632d1b4 100644
  #endif // __linux__
  
 diff --git a/src/slic3r/GUI/MainFrame.cpp b/src/slic3r/GUI/MainFrame.cpp
-index 66e982ad..0d8961f9 100644
+index 66e982ad9..0d8961f9b 100644
 --- a/src/slic3r/GUI/MainFrame.cpp
 +++ b/src/slic3r/GUI/MainFrame.cpp
 @@ -580,6 +580,14 @@ DPIFrame(NULL, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, BORDERLESS_FRAME_
@@ -10222,7 +10226,7 @@ index 66e982ad..0d8961f9 100644
          // Restarts the idle build so a hidden Prepare page is laid out at the new size.
          if (m_prebuild_started)
 diff --git a/src/slic3r/GUI/MsgDialog.cpp b/src/slic3r/GUI/MsgDialog.cpp
-index a4d6c153..8e4a96a8 100644
+index a4d6c1530..8e4a96a84 100644
 --- a/src/slic3r/GUI/MsgDialog.cpp
 +++ b/src/slic3r/GUI/MsgDialog.cpp
 @@ -393,6 +393,10 @@ static void add_msg_content(wxWindow   *parent,
@@ -10237,7 +10241,7 @@ index a4d6c153..8e4a96a8 100644
      if (msg.Contains("<tr>")) {
          int lines = msg.Freq('\n') + 1;
 diff --git a/src/slic3r/GUI/NetworkTestDialog.hpp b/src/slic3r/GUI/NetworkTestDialog.hpp
-index 24a0be51..76f0312f 100644
+index 24a0be51d..76f0312f6 100644
 --- a/src/slic3r/GUI/NetworkTestDialog.hpp
 +++ b/src/slic3r/GUI/NetworkTestDialog.hpp
 @@ -24,7 +24,9 @@
@@ -10252,7 +10256,7 @@ index 24a0be51..76f0312f 100644
  #include <vector>
  #include <algorithm>
 diff --git a/src/slic3r/GUI/Notebook.cpp b/src/slic3r/GUI/Notebook.cpp
-index bc713225..1de495d8 100644
+index bc7132255..1de495d8b 100644
 --- a/src/slic3r/GUI/Notebook.cpp
 +++ b/src/slic3r/GUI/Notebook.cpp
 @@ -266,7 +266,12 @@ void ButtonsListCtrl::SetCompact(size_t n, bool compact)
@@ -10270,7 +10274,7 @@ index bc713225..1de495d8 100644
  }
  
 diff --git a/src/slic3r/GUI/OpenGLManager.cpp b/src/slic3r/GUI/OpenGLManager.cpp
-index 971a5282..dcd55e60 100644
+index 971a5282f..dcd55e60a 100644
 --- a/src/slic3r/GUI/OpenGLManager.cpp
 +++ b/src/slic3r/GUI/OpenGLManager.cpp
 @@ -13,6 +13,9 @@
@@ -10352,7 +10356,7 @@ index 971a5282..dcd55e60 100644
          if (s_gl_info.is_version_greater_or_equal_to(3, 0)) {
              // ARB framebuffer became a mandatory part of core OpenGL 3.0
 diff --git a/src/slic3r/GUI/OpenGLManager.hpp b/src/slic3r/GUI/OpenGLManager.hpp
-index 9e821232..a75275da 100644
+index 9e8212320..a75275daf 100644
 --- a/src/slic3r/GUI/OpenGLManager.hpp
 +++ b/src/slic3r/GUI/OpenGLManager.hpp
 @@ -80,6 +80,7 @@ private:
@@ -10375,7 +10379,7 @@ index 9e821232..a75275da 100644
  
  private:
 diff --git a/src/slic3r/GUI/Plater.cpp b/src/slic3r/GUI/Plater.cpp
-index d395fe10..7967407d 100644
+index d395fe104..7967407da 100644
 --- a/src/slic3r/GUI/Plater.cpp
 +++ b/src/slic3r/GUI/Plater.cpp
 @@ -869,6 +869,9 @@ struct Sidebar::priv
@@ -10539,7 +10543,7 @@ index d395fe10..7967407d 100644
  
  void Plater::priv::show_preview_only_hint(wxCommandEvent &event)
 diff --git a/src/slic3r/GUI/Plater.hpp b/src/slic3r/GUI/Plater.hpp
-index 564addb0..c02bb793 100644
+index 564addb0c..c02bb7932 100644
 --- a/src/slic3r/GUI/Plater.hpp
 +++ b/src/slic3r/GUI/Plater.hpp
 @@ -267,6 +267,10 @@ public:
@@ -10554,7 +10558,7 @@ index 564addb0..c02bb793 100644
      void                    update_searcher();
      void                    update_ui_from_settings();
 diff --git a/src/slic3r/GUI/PrinterWebView.cpp b/src/slic3r/GUI/PrinterWebView.cpp
-index e3c1202b..78c6733a 100644
+index e3c1202b5..78c6733a8 100644
 --- a/src/slic3r/GUI/PrinterWebView.cpp
 +++ b/src/slic3r/GUI/PrinterWebView.cpp
 @@ -28,14 +28,14 @@
@@ -10593,7 +10597,7 @@ index e3c1202b..78c6733a 100644
      inject_vue_resize_workaround(m_browser);
  #endif
 diff --git a/src/slic3r/GUI/SendSystemInfoDialog.cpp b/src/slic3r/GUI/SendSystemInfoDialog.cpp
-index ec322734..4ed50ef3 100644
+index ec3227344..4ed50ef3b 100644
 --- a/src/slic3r/GUI/SendSystemInfoDialog.cpp
 +++ b/src/slic3r/GUI/SendSystemInfoDialog.cpp
 @@ -449,7 +449,7 @@ static std::string generate_system_info_json()
@@ -10606,7 +10610,7 @@ index ec322734..4ed50ef3 100644
      std::string distro_ver = wxGetLinuxDistributionInfo().Release.ToUTF8().data();
      if (distro_id.empty()) { // lsb-release probably not available
 diff --git a/src/slic3r/GUI/SkipPartCanvas.cpp b/src/slic3r/GUI/SkipPartCanvas.cpp
-index af714b12..4a345523 100644
+index af714b125..4a345523b 100644
 --- a/src/slic3r/GUI/SkipPartCanvas.cpp
 +++ b/src/slic3r/GUI/SkipPartCanvas.cpp
 @@ -208,6 +208,10 @@ void SkipPartCanvas::UpdatePartsInfo(const PartsInfo& parts)
@@ -10656,7 +10660,7 @@ index af714b12..4a345523 100644
  void SkipPartCanvas::DebugLogLine(std::string str)
  {
 diff --git a/src/slic3r/GUI/SpeedDialDialog.cpp b/src/slic3r/GUI/SpeedDialDialog.cpp
-index 5426827f..ac27214c 100644
+index 5426827f9..ac27214c4 100644
 --- a/src/slic3r/GUI/SpeedDialDialog.cpp
 +++ b/src/slic3r/GUI/SpeedDialDialog.cpp
 @@ -34,7 +34,7 @@
@@ -10687,7 +10691,7 @@ index 5426827f..ac27214c 100644
      // (the GtkScrolledWindow) does not redraw it.
      if (void* nb = wv->GetNativeBackend())
 diff --git a/src/slic3r/GUI/TextureImportDialog.cpp b/src/slic3r/GUI/TextureImportDialog.cpp
-index 8e83f030..65108a28 100644
+index 8e83f0302..65108a288 100644
 --- a/src/slic3r/GUI/TextureImportDialog.cpp
 +++ b/src/slic3r/GUI/TextureImportDialog.cpp
 @@ -1406,6 +1406,7 @@ void TexturePreviewCanvas::ensure_gl_ready()
@@ -10781,7 +10785,7 @@ index 8e83f030..65108a28 100644
  
  // ============================================================
 diff --git a/src/slic3r/GUI/UVEditorCanvas.cpp b/src/slic3r/GUI/UVEditorCanvas.cpp
-index 23802054..d08ed08e 100644
+index 238020541..d08ed08e8 100644
 --- a/src/slic3r/GUI/UVEditorCanvas.cpp
 +++ b/src/slic3r/GUI/UVEditorCanvas.cpp
 @@ -1387,7 +1387,9 @@ void UVEditorCanvas::render()
@@ -10795,7 +10799,7 @@ index 23802054..d08ed08e 100644
  
      if (m_gl_reset_pending) {
 diff --git a/src/slic3r/GUI/WebViewDialog.cpp b/src/slic3r/GUI/WebViewDialog.cpp
-index d6fc4a71..ce397565 100644
+index d6fc4a717..ce3975651 100644
 --- a/src/slic3r/GUI/WebViewDialog.cpp
 +++ b/src/slic3r/GUI/WebViewDialog.cpp
 @@ -44,7 +44,7 @@
@@ -10817,7 +10821,7 @@ index d6fc4a71..ce397565 100644
      // unless a persistent store is set up, so without this the sign-in is lost on every restart
      // (and on every reset_browser). Each wxWebView has its own context, so give the cloud pane its
 diff --git a/src/slic3r/GUI/Widgets/Label.cpp b/src/slic3r/GUI/Widgets/Label.cpp
-index da5e9b72..d5d5cf7d 100644
+index da5e9b72a..d5d5cf7d1 100644
 --- a/src/slic3r/GUI/Widgets/Label.cpp
 +++ b/src/slic3r/GUI/Widgets/Label.cpp
 @@ -20,14 +20,14 @@
@@ -10863,7 +10867,7 @@ index da5e9b72..d5d5cf7d 100644
  #endif
      if (load_fonts) {
 diff --git a/src/slic3r/GUI/Widgets/SideButton.cpp b/src/slic3r/GUI/Widgets/SideButton.cpp
-index 0426fe22..87fb6d2e 100644
+index 0426fe225..87fb6d2e2 100644
 --- a/src/slic3r/GUI/Widgets/SideButton.cpp
 +++ b/src/slic3r/GUI/Widgets/SideButton.cpp
 @@ -101,11 +101,31 @@ void SideButton::SetLayoutStyle(int style)
@@ -10910,7 +10914,7 @@ index 0426fe22..87fb6d2e 100644
              //BBS with text size
              wxWindow::SetMinSize(szContent + extra_size);
 diff --git a/src/slic3r/GUI/Widgets/SideButton.hpp b/src/slic3r/GUI/Widgets/SideButton.hpp
-index db0ffa16..1008faf6 100644
+index db0ffa16a..1008faf6b 100644
 --- a/src/slic3r/GUI/Widgets/SideButton.hpp
 +++ b/src/slic3r/GUI/Widgets/SideButton.hpp
 @@ -42,6 +42,10 @@ public:
@@ -10935,7 +10939,7 @@ index db0ffa16..1008faf6 100644
      wxSize minSize;
      ScalableBitmap icon;
 diff --git a/src/slic3r/GUI/Widgets/WebView.cpp b/src/slic3r/GUI/Widgets/WebView.cpp
-index dde4df38..b17b1164 100644
+index dde4df385..b17b11641 100644
 --- a/src/slic3r/GUI/Widgets/WebView.cpp
 +++ b/src/slic3r/GUI/Widgets/WebView.cpp
 @@ -51,7 +51,7 @@ namespace fs = boost::filesystem;
@@ -11003,7 +11007,7 @@ index dde4df38..b17b1164 100644
  #else
          webView->SetUserAgent(wxString::Format("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) BBL-Slicer/v%s (%s) BBL-Language/%s",
 diff --git a/src/slic3r/GUI/wxExtensions.cpp b/src/slic3r/GUI/wxExtensions.cpp
-index 5681aa5a..f0203992 100644
+index 5681aa5a4..f02039924 100644
 --- a/src/slic3r/GUI/wxExtensions.cpp
 +++ b/src/slic3r/GUI/wxExtensions.cpp
 @@ -44,7 +44,7 @@
@@ -11016,7 +11020,7 @@ index 5681aa5a..f0203992 100644
  static std::map<int, std::string> msw_menuitem_bitmaps;
  #ifdef __WXMSW__
 diff --git a/src/slic3r/Utils/FontConfigHelp.hpp b/src/slic3r/Utils/FontConfigHelp.hpp
-index ca69b771..5a23d818 100644
+index ca69b7719..5a23d8180 100644
 --- a/src/slic3r/Utils/FontConfigHelp.hpp
 +++ b/src/slic3r/Utils/FontConfigHelp.hpp
 @@ -2,7 +2,7 @@
@@ -11029,7 +11033,7 @@ index ca69b771..5a23d818 100644
  #endif
  
 diff --git a/src/slic3r/Utils/RetinaHelper.hpp b/src/slic3r/Utils/RetinaHelper.hpp
-index 336fc17c..306d1194 100644
+index 336fc17c4..306d1194d 100644
 --- a/src/slic3r/Utils/RetinaHelper.hpp
 +++ b/src/slic3r/Utils/RetinaHelper.hpp
 @@ -18,9 +18,9 @@ public:
@@ -11045,7 +11049,7 @@ index 336fc17c..306d1194 100644
  };
  
 diff --git a/src/slic3r/Utils/WxFontUtils.cpp b/src/slic3r/Utils/WxFontUtils.cpp
-index 4d28fa54..15da1f77 100644
+index 4d28fa54c..15da1f77c 100644
 --- a/src/slic3r/Utils/WxFontUtils.cpp
 +++ b/src/slic3r/Utils/WxFontUtils.cpp
 @@ -102,7 +102,7 @@ std::unique_ptr<Emboss::FontFile> WxFontUtils::create_font_file(const wxFont &fo

@@ -1,0 +1,8 @@
+{
+  "printer_page_order": ["Basic information", "Machine G-code", "Multimaterial", "Extruder", "Motion ability", "Notes"],
+  "custom_defs": {
+    "extruders_count": {"type": "int", "label": "Extruders", "tooltip": "Number of extruders of the printer.", "min": 1, "max": 64, "mode": "advanced"},
+    "imex_pre_slice_warnings": {"type": "app_bool", "label": "Pre-slice warnings", "mode": "advanced", "app_config": "imex_pre_slice_warnings",
+      "tooltip": "Show a warning dialog before slicing if IDEX/IQEX parallel mode concerns are detected (bed temperature conflicts, filament type mismatches, multi-material conflicts). Can be suppressed from the dialog itself. Re-enable here if suppressed accidentally."}
+  }
+}

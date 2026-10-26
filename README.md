@@ -25,10 +25,10 @@
 
 ## What this is
 
-This is not a rewrite or a "mobile companion". It is OrcaSlicer itself, compiled for Android:
+This is not a "mobile companion". It is OrcaSlicer's own code, compiled for Android:
 
 - **Same engine.** `libslic3r` is built unchanged from upstream, so you get the same slicing, the same profiles and the same G-code as the desktop version.
-- **Same interface.** Orca's own wxWidgets GUI (`src/slic3r/GUI`, about 400k lines) runs on Android through wxWidgets' Qt backend, plus a set of Android patches. You get Prepare, Preview, the 3D gizmos, every settings tab, the printer and filament presets, and calibration.
+- **Same features, native UI.** Since 0.2.0 the interface is a native Android app (Jetpack Compose) on top of `liborcacore`, an engine library that compiles the desktop GUI's own logic from `src/slic3r/GUI` (plates, gizmos, painting, settings tabs, presets, calibration, the G-code viewer, devices) against small stand-ins for the wx headers. Every desktop dialog and gizmo has a touch counterpart: Prepare, Preview, all gizmos (cut, measure, text, SVG, mesh boolean, painting, brim ears, texture displacement), every settings page, the setup wizard, calibration and printer connections. The 0.1.x releases ran the wxWidgets GUI itself through wxWidgets' Qt backend.
 - **Made for touch.** Tap, drag and long-press (right click) work on the 3D canvas. Two fingers pinch to zoom, move to pan and twist to rotate. Lists scroll with kinetic finger scrolling, and the Android back button closes dialogs.
 - **Phones and tablets.** Tablets get the desktop layout. On phones (narrower than 600 dp) the settings go full screen behind a "3D view" button, the gizmos move to a vertical column, and the top bar and tab bar become compact.
 - **Android integration.** Files open and save through the system file picker (Storage Access Framework), so Google Drive and other providers work. Web pages (Home, the setup wizard) use the system WebView, the 3D view renders with OpenGL ES 3, and the light or dark theme follows the system.
@@ -48,30 +48,21 @@ Requires Android 9 (API 28) or newer and OpenGL ES 3.0. A device with 6 GB of RA
 
 ## Status
 
-Working, and tested on a phone and a tablet emulator:
-
-- Importing STL files through the system file picker.
-- Handy models and primitives.
-- Selecting, and the move, rotate and scale gizmos.
-- The long-press context menus.
-- Every print, filament and printer setting, and presets.
-- Slicing, with the legend and layer sliders.
-- The setup wizard and the Home page.
-- Light and dark themes.
-
-Saving and exporting G-code goes through the same file picker, and is still being tested.
+Tested feature by feature on a tablet emulator against the desktop app: import (STL, OBJ with textures, 3MF, STEP, AMF, ZIP), plates and plate settings, all gizmos, painting, every setting and preset operation, slicing with cancel and slice all, the Preview legend and sliders, G-code / 3MF / STL export, project save and backup restore, the setup wizard, calibration, printer connections and translations. The arm64 build has been run through the emulator's ARM translation; reports from real devices are welcome.
 
 Known limitations:
 
-- Bambu Lab cloud printing and the network plugin are not available. The plugin is a closed-source desktop binary.
-- The printer camera view is not available yet.
-- On emulators with a software GPU (SwiftShader/ANGLE), the Preview toolpaths render black once the G-code has loaded. Reports from real devices are welcome.
-- A few web-based dialogs, such as printer selection, are not yet fully adapted to narrow phone screens.
+- Bambu Lab network printing is not available. It needs Bambu's closed-source network plug-in, which has no Android build.
 - Large models are slower than on a desktop. Slicing runs on all CPU cores, but phones have less memory and thermal headroom.
 
 Bug reports with your device model and Android version are very welcome.
 
 ## How it works
+
+0.2.0 and later: [`mobile/app`](mobile/app) is the Android app (Kotlin, Jetpack Compose, OpenGL ES 3 view) and
+[`mobile/core`](mobile/core) builds `liborcacore.so`: libslic3r plus upstream GUI sources and functions extracted from
+them at build time ([`mobile/core/tools`](mobile/core/tools)), with stand-ins for the wx classes they use. The diagram
+below is the 0.1.x design, whose patches are still used for the dependency build.
 
 ```
  ┌──────────────────────────────────────────────────────────────┐
@@ -129,7 +120,8 @@ export ORCA_KEYSTORE=~/.android/debug.keystore    # password "android"
 ./configure-deps.sh arm64-v8a && ./run-deps.sh arm64     # Boost, TBB, CGAL, OCCT, OpenVDB, …
 ./configure-wx.sh arm64-v8a && ninja -C build/wx-arm64-v8a install
 ./configure-app.sh arm64-v8a
-./build-all.sh arm64-v8a           # -> dist/OrcaSlicer-android-arm64-preview.apk
+./build-all.sh arm64-v8a           # -> dist/OrcaSlicer-android-arm64-preview.apk (the 0.1.x wx app)
+BUILD_TYPE=release mobile/build-mobile.sh arm64-v8a   # the native app (0.2+): liborcacore + APK
 ```
 
 `configure-engine.sh` and `build-engine.sh` build only `libslic3r`, without the GUI. That is useful for checking engine changes quickly.
