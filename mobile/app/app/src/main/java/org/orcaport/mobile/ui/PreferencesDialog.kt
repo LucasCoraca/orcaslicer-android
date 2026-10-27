@@ -3,6 +3,7 @@ package org.orcaport.mobile.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -34,23 +35,29 @@ fun PreferencesDialog(app: AppState, onClose: () -> Unit) {
     val c = desk()
     val tabs = st.optJSONArray("tabs")?.let { a -> List(a.length()) { a.getJSONObject(it) } } ?: emptyList()
     Dialog(onClose, DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.9f).background(c.panel)) {
+        // a phone (portrait): full screen, the tabs in a row above the items, each label above its control
+        val compact = isCompact()
+        Column((if (compact) Modifier.fillMaxSize().systemBarsPadding() else Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.9f)).background(c.panel)) {
             Row(Modifier.fillMaxWidth().background(FrameColors.topbar).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(st.optString("title"), Modifier.weight(1f), style = deskText(16, FontWeight.Bold, Color.White))
                 Text("✕", Modifier.clickable(onClick = onClose).padding(6.dp), style = deskText(18, color = Color.White))
             }
+            @Composable fun TabLabel(i: Int, t: JSONObject, m: Modifier) {
+                val sel = i == tab
+                Text(t.optString("tab"), m.background(if (sel) c.selection else Color.Transparent).clickable { tab = i }
+                    .padding(horizontal = 10.dp, vertical = 10.dp), style = deskText(14, if (sel) FontWeight.Bold else FontWeight.Normal))
+            }
+            if (compact) Row(Modifier.fillMaxWidth().background(c.field).horizontalScroll(rememberScrollState()).padding(4.dp)) {
+                tabs.forEachIndexed { i, t -> TabLabel(i, t, Modifier) }
+            }
             Row(Modifier.weight(1f)) {
-                Column(Modifier.width(170.dp).fillMaxHeight().background(c.field).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    tabs.forEachIndexed { i, t ->
-                        val sel = i == tab
-                        Text(t.optString("tab"), Modifier.fillMaxWidth().background(if (sel) c.selection else Color.Transparent).clickable { tab = i }
-                            .padding(horizontal = 10.dp, vertical = 10.dp), style = deskText(14, if (sel) FontWeight.Bold else FontWeight.Normal))
-                    }
+                if (!compact) Column(Modifier.width(170.dp).fillMaxHeight().background(c.field).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    tabs.forEachIndexed { i, t -> TabLabel(i, t, Modifier.fillMaxWidth()) }
                 }
                 val items = tabs.getOrNull(tab)?.optJSONArray("items") ?: JSONArray()
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (k in 0 until items.length()) PrefRow(items.getJSONObject(k), ::set) { v ->
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = if (compact) 14.dp else 20.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 6.dp)) {
+                    for (k in 0 until items.length()) PrefRow(items.getJSONObject(k), compact, ::set) { v ->
                         // the buttons that open another dialog: Keyboard shortcuts, 3D scene benchmark (closes Preferences), Network test
                         when (v) {
                             "item_shortcuts" -> app.shortcutsDialog = "global"
@@ -65,7 +72,7 @@ fun PreferencesDialog(app: AppState, onClose: () -> Unit) {
 }
 
 @Composable
-private fun PrefRow(it: JSONObject, set: (Array<out Pair<String, Any?>>) -> Unit, open: (String) -> Unit) {
+private fun PrefRow(it: JSONObject, stacked: Boolean, set: (Array<out Pair<String, Any?>>) -> Unit, open: (String) -> Unit) {
     fun send(vararg kv: Pair<String, Any?>) = set(kv)
     val c = desk()
     val kind = it.optString("kind")
@@ -78,13 +85,21 @@ private fun PrefRow(it: JSONObject, set: (Array<out Pair<String, Any?>>) -> Unit
         }
         return
     }
-    Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(it.optString("label"), style = deskText(14))
-            val tip = it.optString("tooltip")
-            if (tip.isNotEmpty() && tip != it.optString("label")) Text(tip, style = deskText(11, color = c.textDim), maxLines = 3)
+    @Composable fun Label(m: Modifier) = Column(m) {
+        Text(it.optString("label"), style = deskText(14))
+        val tip = it.optString("tooltip")
+        if (tip.isNotEmpty() && tip != it.optString("label")) Text(tip, style = deskText(11, color = c.textDim), maxLines = 3)
+    }
+    // narrow: the label on its own line, the control under it at the right
+    @Composable fun Layout(control: @Composable () -> Unit) =
+        if (stacked && kind != "checkbox" && kind != "darkmode") Column(Modifier.fillMaxWidth()) {
+            Label(Modifier.fillMaxWidth())
+            Box(Modifier.fillMaxWidth().padding(top = 4.dp), Alignment.CenterEnd) { control() }
+        } else Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+            Label(Modifier.weight(1f).padding(end = 12.dp))
+            Box(if (stacked) Modifier else Modifier.widthIn(min = 220.dp), Alignment.CenterEnd) { control() }
         }
-        Box(Modifier.widthIn(min = 220.dp), Alignment.CenterEnd) {
+    Layout {
             when (kind) {
                 "checkbox" -> Row(verticalAlignment = Alignment.CenterVertically) {
                     DeskCheck(it.optString("value") == "true" || it.optString("value") == "1") { v -> send("key" to key, "value" to v) }
@@ -129,5 +144,4 @@ private fun PrefRow(it: JSONObject, set: (Array<out Pair<String, Any?>>) -> Unit
                 }
             }
         }
-    }
 }

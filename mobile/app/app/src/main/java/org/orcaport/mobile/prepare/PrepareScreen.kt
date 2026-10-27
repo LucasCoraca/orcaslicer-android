@@ -64,7 +64,8 @@ fun PrepareScreen(app: AppState, activity: Activity, preview: Boolean) {
     if (compact && !collapsed && !preview)   // the compact layout's "3D view" button (Sidebar::show_compact_header)
         Box(Modifier.fillMaxSize()) {
             SmallFloatingActionButton(onClick = { app.sidebarCollapsed = true }, Modifier.align(Alignment.BottomEnd).padding(16.dp), containerColor = OrcaColors.accent) {
-                OrcaIcon("tab_3d_active", 22.dp, darkVariant = false)
+                // the canvas's collapse chevrons (its "^" opens this panel), not the Prepare tab's icon
+                OrcaIcon("collapse_btn", 26.dp, darkVariant = false)
             }
         }
 }
