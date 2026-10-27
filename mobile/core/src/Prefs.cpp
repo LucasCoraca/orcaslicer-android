@@ -159,9 +159,23 @@ std::string preferred_language(const std::string &device)
     return l.empty() ? device : l;
 }
 
+// GUI_App::on_init_inner (not Windows): dark_color_mode is the system appearance, sent at start and on every change
+static json system_appearance(const json &a)
+{
+    AppConfig &cfg = *Core::get().app_config;
+    const std::string mode = a.value("dark", false) ? "1" : "0";
+    if (cfg.get("dark_color_mode") != mode) {
+        cfg.set("dark_color_mode", mode);
+        cfg.save();
+        Host::event("redraw", json::object());
+    }
+    return nullptr;
+}
+
 static Commands reg({
     {"prefs.get", prefs_get},
     {"prefs.set", prefs_set},
+    {"app.appearance", system_appearance},
 });
 
 } // namespace orca

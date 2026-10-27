@@ -27,7 +27,15 @@ class WebPageHandle { var view: WebView? = null; fun run(js: String) { view?.pos
 fun OrcaWebPage(url: String, startScript: String, modifier: Modifier, handle: WebPageHandle, remote: Boolean = false,
                 keepOrigin: Boolean = false, html: String? = null, onMessage: (String) -> Unit) {
     val bridge = remember { object { @JavascriptInterface fun postMessage(s: String) = onMessage(s) } }
-    AndroidView(modifier = modifier, factory = { ctx ->
+    // WebView::RecreateAll's user agent: Orca's pages take their dark style from "(dark)" (globalapi.js ExecuteDarkMode)
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    fun agent(stock: String) = stock + " BBL-Slicer/v01.09.00 (" + (if (dark) "dark" else "light") + ") BBL-Language/" +
+        java.util.Locale.getDefault().language + " OrcaSlicer"
+    AndroidView(modifier = modifier, update = { v ->
+        // the system theme changed: the new agent, and a reload so navigator.userAgent has it
+        val stock = v.tag as? String ?: return@AndroidView
+        if (v.settings.userAgentString != agent(stock)) { v.settings.userAgentString = agent(stock); v.reload() }
+    }, factory = { ctx ->
         WebView.setWebContentsDebuggingEnabled(org.orcaport.mobile.BuildConfig.DEBUG)
         WebView(ctx).apply {
             // WRAP_CONTENT (AndroidView's default) makes Chromium lay pages out with a zero-height viewport
@@ -37,7 +45,8 @@ fun OrcaWebPage(url: String, startScript: String, modifier: Modifier, handle: We
             settings.allowFileAccess = true
             @Suppress("DEPRECATION") settings.allowFileAccessFromFileURLs = true
             @Suppress("DEPRECATION") settings.allowUniversalAccessFromFileURLs = true
-            settings.userAgentString = settings.userAgentString + " BBL-Slicer/v01.09.00 OrcaSlicer"
+            tag = settings.userAgentString
+            settings.userAgentString = agent(settings.userAgentString)
             addJavascriptInterface(bridge, "OrcaHost")
             webChromeClient = object : android.webkit.WebChromeClient() {
                 override fun onConsoleMessage(m: android.webkit.ConsoleMessage): Boolean {

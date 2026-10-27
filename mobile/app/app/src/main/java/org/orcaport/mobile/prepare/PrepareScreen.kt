@@ -91,12 +91,14 @@ private fun Canvas(app: AppState, modifier: Modifier, preview: Boolean, collapse
             app.redraw()
         }
     }
+    // the GL view and its listener outlive a switch between Prepare and Preview: they read the current tab
+    val previewNow by androidx.compose.runtime.rememberUpdatedState(preview)
     Box(modifier.background(desk().panel)) {
         ghost?.let { g -> ImexGhostPopup(app, g) { ghost = null } }
         AndroidView(factory = { c ->
             GLView(c, object : GLView.Listener {
                 override fun onPick(hit: JSONObject, add: Boolean) {
-                    if (preview) return
+                    if (previewNow) return
                     // a painting gizmo: a tap on the object paints (a dab of the brush, or a fill)
                     if (app.gizmo in PAINT_GIZMOS) {
                         if (Native.vpPaintTap(hit.optDouble("x"), hit.optDouble("y"))) { app.redraw(); return }
@@ -147,7 +149,7 @@ private fun Canvas(app: AppState, modifier: Modifier, preview: Boolean, collapse
                     Native.vpZoomTo(if (hit.optBoolean("hit")) "selection" else "plate"); app.redraw()
                 }
                 override fun onLongPress(hit: JSONObject, x: Float, y: Float) {
-                    if (preview) return
+                    if (previewNow) return
                     // the IDEX/IQEX mode icon: the menu of the modes (right click)
                     if (hit.optString("plate_icon") == "imex_mode") {
                         val plate = hit.optInt("plate")
@@ -200,7 +202,8 @@ private fun Canvas(app: AppState, modifier: Modifier, preview: Boolean, collapse
         else if (!preview) MainToolbar(app, Modifier.align(Alignment.TopCenter).padding(start = 44.dp, top = 4.dp))
         else PreviewOverlay(app)
         ViewControls(app, preview, Modifier.align(Alignment.BottomStart).padding(12.dp))
-        if (!preview && !app.assembleView) ObjectInfo(app, Modifier.align(Alignment.BottomEnd).padding(12.dp))   // the Assembly view shows its Assembly Info
+        if (!preview && !app.assembleView) ObjectInfo(app, Modifier.align(Alignment.BottomEnd).padding(start = 12.dp, end = 12.dp, top = 12.dp,
+            bottom = if (isCompact()) 196.dp else 12.dp))   // a phone: above the navigator and the canvas toolbar   // the Assembly view shows its Assembly Info
         SliceNotification(app, Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = if (preview) 60.dp else 120.dp))
         app.progress?.let { p ->
             Surface(Modifier.align(Alignment.Center), shape = RoundedCornerShape(6.dp), color = desk().panel, shadowElevation = 6.dp) {

@@ -13,11 +13,21 @@ import org.orcaport.mobile.ui.onKeyBeforeFocus
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // the top bar is dark in both themes (Orca's topbar): light status bar icons always
+        enableEdgeToEdge(statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         val app = (application as? OrcaApp)?.state ?: AppState(this).also { OrcaApp.fallback = it }
         if (!app.ready && app.startupError == null && !app.starting) { app.starting = true; app.start(this) }
         intent?.let { app.openIntent(this, it) }
-        setContent { OrcaTheme { MainScreen(app, this) } }
+        setContent {
+            OrcaTheme {
+                // the engine's dark_color_mode follows the system appearance (the 3D view, its web pages and dialogs)
+                val dark = androidx.compose.foundation.isSystemInDarkTheme()
+                androidx.compose.runtime.LaunchedEffect(dark, app.ready) {
+                    if (app.ready) app.call("app.appearance", org.orcaport.mobile.engine.jobj("dark" to dark)) { app.redraw() }
+                }
+                MainScreen(app, this)
+            }
+        }
     }
 
     /** Android may end the app in the background: the unsaved project is backed up now (restored at the next start) */
