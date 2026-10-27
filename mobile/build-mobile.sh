@@ -2,6 +2,7 @@
 # Build the native mobile app: liborcacore.so (engine build dir with ORCA_MOBILE_CORE=ON), the generated assets, the APK.
 # usage: mobile/build-mobile.sh [abi...]      (default x86_64; BUILD_TYPE=release for a release APK)
 #   SKIP_CORE=1   reuse the last liborcacore.so      SKIP_ASSETS=1   reuse the staged assets
+#   GRADLE_OFFLINE=1   no network for Gradle (its cache must hold the dependencies)
 set -e
 M="$(cd "$(dirname "$0")" && pwd)"
 source "$M/../env.sh"
@@ -57,6 +58,6 @@ for ABI in $ABIS; do FLAVORS="$FLAVORS $([ $ABI = arm64-v8a ] && echo arm64 || e
 cd $M/app
 for F in $FLAVORS; do
   T=assemble${F^}${BUILD_TYPE^}
-  nice -n 19 ./gradlew --offline -q $T
+  nice -n 19 ./gradlew ${GRADLE_OFFLINE:+--offline} -q $T
 done
 find $M/app/app/build/outputs/apk -name "*.apk" -newer $STAGE/assets/settings_layout.json -printf "%p %s\n"

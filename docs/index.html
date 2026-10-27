@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OrcaSlicer for Android</title>
-<meta name="description" content="The full OrcaSlicer desktop app (same slicing engine, same interface) running natively on Android phones and tablets. Unofficial community port.">
+<meta name="description" content="OrcaSlicer on Android phones and tablets: the same slicing engine and features as the desktop app, with a native touch interface. Unofficial community port.">
 <meta property="og:title" content="OrcaSlicer for Android">
-<meta property="og:description" content="The real OrcaSlicer, with the same engine and the same interface, running natively on Android phones and tablets.">
+<meta property="og:description" content="OrcaSlicer's own engine and desktop logic, with a native touch interface, on Android phones and tablets.">
 <meta property="og:image" content="https://lucascoraca.github.io/orcaslicer-android/assets/og.jpg">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
@@ -218,7 +218,7 @@ footer a { color: #b9cfcc; }
     <div>
       <div class="eyebrow"><i></i>Unofficial community port · v0.1 preview</div>
       <h1>The real OrcaSlicer, <span>on Android.</span></h1>
-      <p class="lead">Not a companion app and not a rewrite. The same slicing engine and the same interface as the desktop version, compiled natively for Android phones and tablets and adapted for touch.</p>
+      <p class="lead">Not a companion app. The same slicing engine and the same features as the desktop version, built from OrcaSlicer's own code, with a native interface for Android phones and tablets.</p>
       <div class="cta">
         <a class="btn primary" href="https://github.com/LucasCoraca/orcaslicer-android/releases/latest/download/OrcaSlicer-android-arm64-preview.apk">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>
@@ -263,18 +263,18 @@ footer a { color: #b9cfcc; }
       </div>
       <div class="card">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18M8 21h8"/></svg></div>
-        <h3>Same interface</h3>
-        <p>Orca's wxWidgets GUI runs on Android through wxWidgets' Qt backend: Prepare, Preview, gizmos, presets and the settings tabs.</p>
+        <h3>Same features, native UI</h3>
+        <p>The desktop GUI's own logic, compiled from upstream, behind a native Android interface: Prepare, Preview, every gizmo, presets and the settings tabs.</p>
       </div>
       <div class="card">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5a2 2 0 014 0v6"/><path d="M13 9a2 2 0 014 0v3"/><path d="M17 11a2 2 0 014 0v3a8 8 0 01-8 8h-1a7 7 0 01-6-3.4L3.5 15a2 2 0 013.3-2.2L9 15"/></svg></div>
         <h3>Built for touch</h3>
-        <p>Tap to select and drag to move. Long-press for context menus. Pinch to zoom, two fingers to pan, twist to rotate. Kinetic scrolling, and the back button closes dialogs.</p>
+        <p>Tap to select and drag to move. Long-press for context menus. Pinch to zoom, two fingers to pan, twist to rotate. The back button closes dialogs.</p>
       </div>
       <div class="card">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="13" height="15" rx="2"/><rect x="17" y="8" width="5" height="12" rx="1.5"/></svg></div>
         <h3>Phones and tablets</h3>
-        <p>Tablets get the full desktop layout. Phones get a compact one: settings full screen behind a "3D view" button, a vertical gizmo column, and compact bars.</p>
+        <p>Tablets get the full desktop layout. Phones get a compact one with the settings full screen.</p>
       </div>
       <div class="card">
         <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16M4 4h7l2 3h7v9H4z"/></svg></div>
@@ -328,22 +328,19 @@ footer a { color: #b9cfcc; }
     <div>
       <div class="kicker">How it works</div>
       <h2>A port, not a rewrite.</h2>
-      <p class="sub" style="margin-bottom:28px">OrcaSlicer's interface is written against wxWidgets. wxWidgets has no Android backend, but it has a Qt one, and Qt runs on Android. The port makes that chain work on a touch screen.</p>
+      <p class="sub" style="margin-bottom:28px">OrcaSlicer's interface logic lives in wxWidgets classes. Instead of rewriting it, the port compiles that upstream code into an engine library and puts a native Android interface on top. No wxWidgets, no Qt.</p>
       <ul class="points">
-        <li><div><b>wxWidgets on Qt, fixed for Android</b><span>DPI-correct painting, full-screen windows and on-screen dialogs, touch converted to mouse and gesture events, kinetic scrolling, and shared GL contexts for the 3D views.</span></div></li>
-        <li><div><b>OpenGL ES 3</b><span>Orca's GLSL shaders are converted to GLSL ES, with a GLES loader and ES-safe render paths in the 3D scene and the G-code viewer.</span></div></li>
-        <li><div><b>Android services</b><span>Java bridges for the system WebView and the Keystore. The native file picker handles <code>content://</code> URIs, and saved files are copied back through the Storage Access Framework.</span></div></li>
-        <li><div><b>Two patches, pinned upstream</b><span>Every change is kept as one patch for OrcaSlicer and one for wxWidgets, so the port can follow upstream.</span></div></li>
+        <li><div><b>Upstream code, compiled as is</b><span>Plates, gizmos, painting, settings tabs, presets, calibration and the G-code viewer come from <code>src/slic3r/GUI</code>. Functions are extracted from the upstream sources at build time and built against small stand-ins for the wx headers.</span></div></li>
+        <li><div><b>Native Android interface</b><span>Kotlin and Jetpack Compose, laid out like the desktop app: every dialog and gizmo panel has a touch counterpart.</span></div></li>
+        <li><div><b>OpenGL ES 3</b><span>Orca's GLSL shaders are converted to GLSL ES and the scene and G-code viewer render through ES-safe paths.</span></div></li>
+        <li><div><b>Android services</b><span>The system file picker (Storage Access Framework), the system WebView, and the theme and language of the device.</span></div></li>
       </ul>
     </div>
     <div class="stack">
-      <div class="layer orca"><b>OrcaSlicer GUI</b><span>src/slic3r/GUI: Orca's own interface, with small <code>__ANDROID__</code> layout tweaks</span></div>
+      <div class="layer"><b>Android app</b><span>Kotlin · Jetpack Compose · GLSurfaceView</span></div>
+      <div class="layer orca"><b>liborcacore</b><span>upstream src/slic3r/GUI logic, built against wx stand-ins</span></div>
       <div class="row2">
-        <div class="layer"><b>wxWidgets 3.3</b><span>Orca's fork, wxQt backend + Android patches</span></div>
         <div class="layer orca"><b>libslic3r</b><span>slicing engine, unchanged</span></div>
-      </div>
-      <div class="row2">
-        <div class="layer"><b>Qt 6.8 Widgets</b><span>for Android</span></div>
         <div class="layer"><b>Boost · TBB · CGAL · OCCT · OpenVDB</b><span>cross-compiled with the NDK</span></div>
       </div>
       <div class="layer"><b>Android</b><span>OpenGL ES 3 / EGL · WebView · Storage Access Framework · API 28+</span></div>
@@ -368,15 +365,12 @@ footer a { color: #b9cfcc; }
       </div>
       <div class="card">
         <h3 style="margin-bottom:18px">Build from source</h3>
-<pre><span class="c"># Linux host · Android NDK 29 · Qt 6.8.3 for Android · JDK 17</span>
+<pre><span class="c"># Linux host · Android NDK 29 · JDK 17</span>
 git clone https://github.com/LucasCoraca/orcaslicer-android
 cd orcaslicer-android
-./fetch-sources.sh        <span class="c"># pinned upstream + patches</span>
+./fetch-sources.sh        <span class="c"># pinned upstream + patch</span>
 ./configure-deps.sh arm64-v8a &amp;&amp; ./run-deps.sh arm64
-./configure-wx.sh arm64-v8a
-ninja -C build/wx-arm64-v8a install
-./configure-app.sh arm64-v8a
-./build-all.sh arm64-v8a  <span class="c"># → dist/*.apk</span></pre>
+BUILD_TYPE=release mobile/build-mobile.sh arm64-v8a  <span class="c"># → APK</span></pre>
         <p style="color:var(--ink-2);font-size:14px;margin:16px 0 0">Prerequisites and environment variables are listed in the <a href="https://github.com/LucasCoraca/orcaslicer-android#building-from-source">README</a>.</p>
       </div>
     </div>
@@ -407,7 +401,7 @@ ninja -C build/wx-arm64-v8a install
 
 <footer>
   <div class="wrap">
-    <div>OrcaSlicer for Android · AGPL-3.0 · Built on OrcaSlicer, Bambu Studio, PrusaSlicer, Slic3r, wxWidgets and Qt.</div>
+    <div>OrcaSlicer for Android · AGPL-3.0 · Built on OrcaSlicer, Bambu Studio, PrusaSlicer and Slic3r.</div>
     <div><a href="https://github.com/LucasCoraca/orcaslicer-android">GitHub</a> · <a href="https://github.com/LucasCoraca/orcaslicer-android/releases">Releases</a> · <a href="https://github.com/LucasCoraca/orcaslicer-android/issues">Issues</a></div>
   </div>
 </footer>

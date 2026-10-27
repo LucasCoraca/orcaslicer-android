@@ -5,7 +5,7 @@
 <h1 align="center">OrcaSlicer for Android</h1>
 
 <p align="center">
-  The full OrcaSlicer desktop app (same slicing engine, same interface) running natively on Android phones and tablets.
+  OrcaSlicer on Android phones and tablets: the same slicing engine and the same features as the desktop app, with a native touch interface.
 </p>
 
 <p align="center">
@@ -25,18 +25,16 @@
 
 ## What this is
 
-This is not a "mobile companion". It is OrcaSlicer's own code, compiled for Android:
+This is not a "mobile companion" with a subset of features. It is built from OrcaSlicer's own source code:
 
 - **Same engine.** `libslic3r` is built unchanged from upstream, so you get the same slicing, the same profiles and the same G-code as the desktop version.
-- **Same features, native UI.** Since 0.2.0 the interface is a native Android app (Jetpack Compose) on top of `liborcacore`, an engine library that compiles the desktop GUI's own logic from `src/slic3r/GUI` (plates, gizmos, painting, settings tabs, presets, calibration, the G-code viewer, devices) against small stand-ins for the wx headers. Every desktop dialog and gizmo has a touch counterpart: Prepare, Preview, all gizmos (cut, measure, text, SVG, mesh boolean, painting, brim ears, texture displacement), every settings page, the setup wizard, calibration and printer connections. The 0.1.x releases ran the wxWidgets GUI itself through wxWidgets' Qt backend.
-- **Made for touch.** Tap, drag and long-press (right click) work on the 3D canvas. Two fingers pinch to zoom, move to pan and twist to rotate. Lists scroll with kinetic finger scrolling, and the Android back button closes dialogs.
-- **Phones and tablets.** Tablets get the desktop layout. On phones (narrower than 600 dp) the settings go full screen behind a "3D view" button, the gizmos move to a vertical column, and the top bar and tab bar become compact.
-- **Android integration.** Files open and save through the system file picker (Storage Access Framework), so Google Drive and other providers work. Web pages (Home, the setup wizard) use the system WebView, the 3D view renders with OpenGL ES 3, and the light or dark theme follows the system.
+- **Same logic.** The behaviour of the desktop GUI (plates, gizmos, painting, settings tabs, presets, calibration, the G-code viewer, printer connections) is not rewritten. It is compiled from upstream's `src/slic3r/GUI` sources, together with functions extracted from them at build time.
+- **Native interface.** The screens are a native Android app (Kotlin, Jetpack Compose) that follows the desktop layout: Prepare, Preview, Device, Project, every dialog and every gizmo, adapted for touch. It does not use wxWidgets or Qt.
+- **Made for touch.** Tap, drag and long-press (right click) work in the 3D view. Two fingers pinch to zoom, move to pan and twist to rotate. The Android back button closes dialogs.
+- **Phones and tablets.** Tablets get the desktop layout; phones get a compact one.
+- **Android integration.** Files open and save through the system file picker, so Google Drive and other providers work. The 3D view renders with OpenGL ES 3, web pages use the system WebView, and the theme and the language follow the system.
 
-Demo videos: [tablet](docs/assets/demo-tablet.mp4) · [phone](docs/assets/demo-phone.mp4)
-
-In a headset: [OrcaSlicer XR](https://github.com/LucasCoraca/orcaslicer-xr) is this app on Meta Quest 3, with Orca's window
-in front of you and the plate in the room.
+In a headset: [OrcaSlicer XR](https://github.com/LucasCoraca/orcaslicer-xr) runs OrcaSlicer on Meta Quest 3.
 
 ## Install
 
@@ -48,7 +46,16 @@ Requires Android 9 (API 28) or newer and OpenGL ES 3.0. A device with 6 GB of RA
 
 ## Status
 
-Tested feature by feature on a tablet emulator against the desktop app: import (STL, OBJ with textures, 3MF, STEP, AMF, ZIP), plates and plate settings, all gizmos, painting, every setting and preset operation, slicing with cancel and slice all, the Preview legend and sliders, G-code / 3MF / STL export, project save and backup restore, the setup wizard, calibration, printer connections and translations. The arm64 build has been run through the emulator's ARM translation; reports from real devices are welcome.
+Tested feature by feature against the desktop app on a tablet emulator:
+
+- Import of STL, OBJ (with textures), 3MF, STEP, AMF and ZIP; project save, and backup with restore after a crash.
+- Plates and plate settings, arrange, auto-orient, fill bed, undo / redo.
+- Every gizmo: move, rotate, scale, lay on face, cut, measure and assembly, text, SVG, mesh boolean, simplify, brim ears, variable layer height, support / seam / color / fuzzy skin painting, and texture displacement with the UV editor.
+- Slicing with progress and cancel, slice all, and the Preview with its legend, view types and sliders.
+- Every printer, filament and process setting, presets, and the unsaved changes dialog.
+- The setup wizard, calibration, printer connections, G-code / 3MF / STL export and translations.
+
+The arm64 build has been run through the emulator's ARM translation. Reports from real devices are welcome.
 
 Known limitations:
 
@@ -59,36 +66,41 @@ Bug reports with your device model and Android version are very welcome.
 
 ## How it works
 
-0.2.0 and later: [`mobile/app`](mobile/app) is the Android app (Kotlin, Jetpack Compose, OpenGL ES 3 view) and
-[`mobile/core`](mobile/core) builds `liborcacore.so`: libslic3r plus upstream GUI sources and functions extracted from
-them at build time ([`mobile/core/tools`](mobile/core/tools)), with stand-ins for the wx classes they use. The diagram
-below is the 0.1.x design, whose patches are still used for the dependency build.
-
 ```
  ┌──────────────────────────────────────────────────────────────┐
- │  OrcaSlicer GUI  (src/slic3r/GUI, unmodified apart from a few │
- │  #ifdef __ANDROID__ layout and GLES tweaks)                   │
- ├───────────────────────────────┬──────────────────────────────┤
- │  wxWidgets 3.3 (Orca fork)    │  libslic3r (slicing engine,  │
- │  wxQt backend + Android       │  unchanged)                  │
- │  patches: touch, DPI, SAF,    │                              │
- │  WebView, GL canvases         │                              │
- ├───────────────────────────────┤  Boost, TBB, CGAL, OCCT,     │
- │  Qt 6.8 Widgets for Android   │  OpenVDB … cross-compiled    │
- ├───────────────────────────────┴──────────────────────────────┤
- │  Android: OpenGL ES 3 / EGL, system WebView, Storage Access   │
- │  Framework, NDK 29, API 28+, arm64-v8a and x86_64             │
+ │  Android app  (mobile/app: Kotlin, Jetpack Compose)          │
+ │  screens, dialogs and gizmo panels; GLSurfaceView for 3D     │
+ ├──────────────────────────────────────────────────────────────┤
+ │  JNI: JSON commands and events                               │
+ ├──────────────────────────────────────────────────────────────┤
+ │  liborcacore.so  (mobile/core)                               │
+ │  upstream src/slic3r/GUI sources and extracted functions,    │
+ │  compiled against small stand-ins for the wx headers they    │
+ │  include; OpenGL ES 3 rendering of the scene and Preview     │
+ ├──────────────────────────────────────────────────────────────┤
+ │  libslic3r (slicing engine, unchanged), libvgcode, ImGui,    │
+ │  Boost, TBB, CGAL, OCCT, OpenVDB … cross-compiled; CPython   │
+ │  3.14 for Orca's plugin system                               │
+ ├──────────────────────────────────────────────────────────────┤
+ │  Android: OpenGL ES 3 / EGL, system WebView, Storage Access  │
+ │  Framework, NDK 29, API 28+, arm64-v8a and x86_64            │
  └──────────────────────────────────────────────────────────────┘
 ```
 
-All changes to upstream are kept as two patches:
+Where the desktop logic lives inside wx classes, the port compiles the upstream code instead of copying it.
+[`mobile/tools/extract_functions.py`](mobile/tools/extract_functions.py) pulls the needed functions and class bodies out
+of the upstream sources at build time (see [`mobile/core/CMakeLists.txt`](mobile/core/CMakeLists.txt)), and
+[`mobile/core/shim`](mobile/core/shim) provides the wx and GUI declarations they expect. The settings pages are
+generated from upstream's `Tab.cpp` by [`mobile/tools/gen_settings_layout.py`](mobile/tools/gen_settings_layout.py).
 
-| Patch | Applies to | Contents |
-|---|---|---|
-| [`patches/orcaslicer-android.patch`](patches/orcaslicer-android.patch) | [OrcaSlicer](https://github.com/SoftFever/OrcaSlicer) `1ee0b730` | Android dependency superbuild; GLSL ES shaders and a GLES loader; GLES render paths; the compact phone layout; Android startup (resource unpacking, CA certificates) |
-| [`patches/wxWidgets-android.patch`](patches/wxWidgets-android.patch) | [Orca-deps-wxWidgets](https://github.com/SoftFever/Orca-deps-wxWidgets) `88f3483` | wxQt fixes for Android: DPI-correct painting; full-screen frames and on-screen dialogs; touch to mouse and gesture events; kinetic scrolling; native file picker with `content://` support; WebView and Keystore bridges in Java |
+Changes to upstream OrcaSlicer are kept in one patch,
+[`patches/orcaslicer-android.patch`](patches/orcaslicer-android.patch), applied to
+[OrcaSlicer](https://github.com/SoftFever/OrcaSlicer) `1ee0b730`. It holds the Android dependency superbuild, GLSL ES
+shaders and a GLES loader, and the switch that adds `mobile/core` to the build.
 
-The Android app wrapper (entry point, resource packing and manifest) is in [`android/app`](android/app).
+Versions 0.1.x took a different route: they ran Orca's wxWidgets GUI through wxWidgets' Qt backend. That build
+([`android/app`](android/app), [`patches/wxWidgets-android.patch`](patches/wxWidgets-android.patch), `build-all.sh`) is
+still in the repository but is no longer released.
 
 ## Building from source
 
@@ -97,8 +109,7 @@ Host: Linux x86_64 with about 60 GB free disk space. A full build takes a while,
 **Prerequisites**
 
 - Android SDK with NDK `29.0.14206865`, build-tools `34.0.0`, platform `android-34` and CMake `3.22.1`.
-- JDK 17.
-- Qt 6.8.3 for Android (`android_arm64_v8a` and/or `android_x86_64`) plus the matching host Qt. The Qt online installer provides both.
+- JDK 17. Gradle is fetched by the wrapper in `mobile/app`.
 - CMake ≥ 3.28 and Ninja on `PATH`. The scripts look in `hosttools/pyenv/bin` first; `python3 -m venv hosttools/pyenv && hosttools/pyenv/bin/pip install cmake ninja` sets that up.
 - GNU m4, for the GMP/MPFR autotools builds.
 - CPython 3.14 built for Android, placed in `deps-android/<abi>/usr/local/libpython`. Orca's plugin system needs it.
@@ -107,25 +118,22 @@ Paths are read from the environment; see [`env.sh`](env.sh):
 
 ```sh
 export ANDROID_SDK_ROOT=~/Android/sdk
-export QT_ANDROID=~/Qt/6.8.3/android_arm64_v8a   # or QT_ANDROID_ROOT=<dir with arm64-v8a/ x86_64/ qt-host/>
-export QT_HOST_PATH=~/Qt/6.8.3/gcc_64
 export JAVA_HOME=~/jdk-17
-export ORCA_KEYSTORE=~/.android/debug.keystore    # password "android"
+export ORCA_KEYSTORE=~/.android/debug.keystore    # alias "orcadebug", password "android"
 ```
 
 **Steps**
 
 ```sh
-./fetch-sources.sh                 # pinned OrcaSlicer + wxWidgets checkouts, patches applied
-./configure-deps.sh arm64-v8a && ./run-deps.sh arm64     # Boost, TBB, CGAL, OCCT, OpenVDB, …
-./configure-wx.sh arm64-v8a && ninja -C build/wx-arm64-v8a install
-./configure-app.sh arm64-v8a
-./build-all.sh arm64-v8a           # -> dist/OrcaSlicer-android-arm64-preview.apk (the 0.1.x wx app)
-BUILD_TYPE=release mobile/build-mobile.sh arm64-v8a   # the native app (0.2+): liborcacore + APK
+./fetch-sources.sh                                      # pinned OrcaSlicer checkout, patch applied
+./configure-deps.sh arm64-v8a && ./run-deps.sh arm64    # Boost, TBB, CGAL, OCCT, OpenVDB, …
+BUILD_TYPE=release mobile/build-mobile.sh arm64-v8a     # liborcacore + the APK
 ```
 
-`configure-engine.sh` and `build-engine.sh` build only `libslic3r`, without the GUI. That is useful for checking engine changes quickly.
+The APK lands in `mobile/app/app/build/outputs/apk/arm64/release/`. Without `BUILD_TYPE=release` you get a debug build
+with the package id `org.orcaport.slicer.dev`, which installs next to a release. `x86_64` builds the same way, for
+emulators.
 
 ## License
 
-[GNU AGPL-3.0](LICENSE), the same as OrcaSlicer. This port stands on the work of OrcaSlicer, Bambu Studio, PrusaSlicer and Slic3r, and builds on wxWidgets and Qt.
+[GNU AGPL-3.0](LICENSE), the same as OrcaSlicer. This port stands on the work of OrcaSlicer, Bambu Studio, PrusaSlicer and Slic3r.
