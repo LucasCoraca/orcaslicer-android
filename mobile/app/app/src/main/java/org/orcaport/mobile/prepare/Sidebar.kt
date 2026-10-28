@@ -120,7 +120,9 @@ private fun PrinterCard(app: AppState, p: JSONObject) {
             DeskCombo(p.optString("nozzle_volume_type", "Standard"), Modifier.weight(1f), height = 32.dp) { app.editing = "printer" }
         }
     }
-    if (open) PresetPicker(list, p.optString("name"), { open = false }) { open = false; app.selectPreset("printer", it) }
+    if (open) PresetPicker(list, p.optString("name"), { open = false }, listOf(
+        tr("Select/Remove printers (system presets)") to { app.wizard = "models" },
+        tr("Create printer") to { app.createPrinter = true })) { open = false; app.selectPreset("printer", it) }
 }
 
 /**
@@ -214,7 +216,9 @@ private fun FilamentSlot(app: AppState, slot: Int, f: JSONObject, multi: Boolean
             }
         }
     }
-    if (open) PresetPicker(list, f.optString("name"), { open = false }) { open = false; app.selectPreset("filament", it, slot) }
+    if (open) PresetPicker(list, f.optString("name"), { open = false }, listOf(tr("Add/Remove filament") to { app.wizard = "filaments" })) {
+        open = false; app.selectPreset("filament", it, slot)
+    }
     if (color) ColorPickerDialog(parseColor(f.optString("color")), onDismiss = { color = false }) { hex ->
         color = false
         app.call("presets.filament_color", jobj("slot" to slot, "color" to hex)) { if (it is JSONObject) app.presets = it }

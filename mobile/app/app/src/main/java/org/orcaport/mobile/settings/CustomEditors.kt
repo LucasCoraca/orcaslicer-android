@@ -58,7 +58,7 @@ private fun parsePoints(a: JSONArray?): List<Pair<Double, Double>> = a.strings()
 }
 
 /** a document the user picked, kept in the data folder (the config stores its path, like a desktop file name) */
-private fun keepFile(app: AppState, uri: android.net.Uri, dir: String): String? {
+internal fun keepFile(app: AppState, uri: android.net.Uri, dir: String): String? {
     val ctx = app.appContext ?: return null
     val name = app.displayName(ctx, uri)
     val f = java.io.File(java.io.File(app.engine.dataDir, dir).apply { mkdirs() }, name)

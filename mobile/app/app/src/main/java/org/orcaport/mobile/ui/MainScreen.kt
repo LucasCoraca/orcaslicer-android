@@ -125,6 +125,7 @@ fun MainScreen(app: AppState, activity: Activity) {
         if (app.objectTable) org.orcaport.mobile.prepare.ObjectTableDialog(app) { app.objectTable = false }
         app.calibration?.let { k -> CalibrationDialog(app, k) { app.calibration = null } }
         if (app.exportBundle) ExportBundleDialog(app) { app.exportBundle = false }
+        if (app.createPrinter) CreatePrinterDialog(app) { app.createPrinter = false }
         app.shortcutsDialog?.let { ctx -> ShortcutsDialog(app, ctx) { app.shortcutsDialog = null } }
         PublishDialog(app)
         if (app.preferences) PreferencesDialog(app) { app.preferences = false; app.loadPluginPages(); app.call("project.state") { p -> if (p is org.json.JSONObject) app.project = p } }

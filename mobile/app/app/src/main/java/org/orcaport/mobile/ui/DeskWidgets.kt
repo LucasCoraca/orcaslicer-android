@@ -114,7 +114,7 @@ fun DeskCheck(checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> 
 @Composable
 fun DeskInput(
     value: String, enabled: Boolean, numeric: Boolean, modifier: Modifier = Modifier, sidetext: String? = null,
-    singleLine: Boolean = true, mono: Boolean = false, onCommit: (String) -> Unit,
+    singleLine: Boolean = true, mono: Boolean = false, placeholder: String? = null, onCommit: (String) -> Unit,
 ) {
     val c = desk()
     var text by remember(value) { mutableStateOf(value) }
@@ -136,7 +136,13 @@ fun DeskInput(
             textStyle = if (mono) monoStyle.copy(color = if (enabled) c.text else c.textDisabled) else deskText(14, color = if (enabled) c.text else c.textDisabled),
             cursorBrush = SolidColor(c.accent),
             keyboardOptions = KeyboardOptions(keyboardType = if (numeric) KeyboardType.Decimal else KeyboardType.Text, imeAction = if (singleLine) ImeAction.Done else ImeAction.Default),
-            keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }))
+            keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
+            decorationBox = { inner ->   // wxTextCtrl::SetHint
+                Box {
+                    if (text.isEmpty() && placeholder != null) Text(placeholder, style = deskText(14, color = c.textDim), maxLines = 1)
+                    inner()
+                }
+            })
         if (!sidetext.isNullOrEmpty()) Text(sidetext, Modifier.padding(start = 4.dp), style = deskText(12, color = c.textDim), maxLines = 1)
     }
 }

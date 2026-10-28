@@ -94,6 +94,8 @@ class AppState(ctx: Context) {
     var preferences by mutableStateOf(false)
     /** the Export Preset Bundle dialog */
     var exportBundle by mutableStateOf(false)
+    /** the printer combo's "Create printer" (CreatePrinterPresetDialog) */
+    var createPrinter by mutableStateOf(false)
     /** the calibration dialog that is open ("pa", "temp", ...) */
     var calibration by mutableStateOf<String?>(null)
     /** the Assembly view (Plater assemble_view) and its selection mode (Object / Part) */

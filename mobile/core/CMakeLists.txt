@@ -32,7 +32,7 @@ set(_utils "${CMAKE_CURRENT_BINARY_DIR}/upstream/slic3r/Utils")
 set(ORCA_UPSTREAM_UTILS_FILES Http PrintHost OctoPrint Duet UltiMaker FlashAir AstroBox Repetier MKS ESP3D CrealityPrint
     Obico Flashforge ElegooLink Moonraker SimplyPrint 3DPrinterOS ASCIIFolding Bonjour TCPConsole SerialMessage SerialMessageType WebSocketClient
     CloudProvider ICloudServiceAgent ICameraSignalingChannel IPrinterAgent bambu_networking OrcaCloudServiceAgent NetworkAgent
-    BBLNetworkPlugin FileTransferUtils)
+    BBLNetworkPlugin FileTransferUtils FileHelp)
 foreach (_f ${ORCA_UPSTREAM_UTILS_FILES})
     foreach (_ext cpp hpp)
         if (EXISTS "${ORCA_SRC}/src/slic3r/Utils/${_f}.${_ext}")
@@ -153,6 +153,27 @@ add_custom_command(OUTPUT "${_expcfg_inc}" "${_cpdhelp_inc}"
             earse_preset_fields_for_safe initial_file_path initial_file_name initial_zip_archive save_zip_archive_to_file save_presets_to_zip
             archive_preset_bundle_to_file archive_filament_bundle_to_file archive_printer_preset_to_file archive_filament_preset_to_file
             archive_process_preset_to_file data_init
+    DEPENDS "${_cpd_src}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/extract_functions.py"
+    VERBATIM)
+# Create printer (CreatePrinterPresetDialog): its tables, input checks and preset loading; the widgets are the app's
+set(_cprn_types_inc "${_gen}/CreatePrinterTables.inc")
+set(_cprn_inc "${_gen}/CreatePrinter.inc")
+add_custom_command(OUTPUT "${_cprn_types_inc}" "${_cprn_inc}"
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/../tools/extract_functions.py" "${_cpd_src}" - - "${_cprn_types_inc}"
+            "var printer_vendors" "var printer_model_map" "var nozzle_diameter_vec" "var nozzle_diameter_map" "var special_key"
+            remove_special_key my_stof get_exist_vendor_choices calculate_md5 load_filament_id_sources get_filament_id
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/../tools/extract_functions.py" "${_cpd_src}" CreatePrinterPresetDialog CreatePrinter "${_cprn_inc}"
+            --sub "wxGetApp().load_current_presets();" "presets_changed();"
+            --sub "wxGetApp().mainframe->update_side_preset_ui();" ""
+            --sub "wxGetApp().sidebar().update_ui_from_settings();" ""
+            --sub "wxGetApp().sidebar().update_all_preset_comboboxes();" ""
+            --sub "EndModal(wxID_CANCEL);" "closed = true;"
+            --sub "m_page2->SetSizerAndFit(m_page2_sizer);" ""
+            --sub "else if(m_create_type.create_nozzle)" "else if(!m_create_type.create_nozzle.empty())"
+            load_system_and_user_presets_with_curr_model generate_process_presets_data get_printer_vendor get_printer_model
+            get_nozzle_diameter get_custom_printer_model get_custom_printer_name set_current_visible_printer
+            printer_preset_sort_with_nozzle_diameter save_printable_area_config check_printable_area validate_input_valid
+            curr_create_preset_type curr_create_printer_type on_select_printer_model on_preset_model_value_change data_init
     DEPENDS "${_cpd_src}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/extract_functions.py"
     VERBATIM)
 # Calibration: the dialogs' on_start and Plater::calib_* (+ their helpers), compiled as they are
@@ -689,7 +710,7 @@ add_custom_command(OUTPUT ${_asm_incs}
             has_assemble_view
     DEPENDS "${_glc_src}" "${ORCA_SRC}/src/slic3r/GUI/Plater.cpp" "${ORCA_SRC}/src/slic3r/GUI/Gizmos/GLGizmoUtils.cpp" "${_x}"
     VERBATIM)
-add_custom_target(orcacore_extracted DEPENDS "${_cut_inc}" "${_plate_inc}" "${_patch_inc}" "${_ears_inc}" "${_emboss_inc}" "${_textlines_inc}" "${_drag_inc}" "${_svg_inc}" "${_publish_inc}" "${_vgexp_inc}" "${_prefs_inc}" "${_homestr_inc}" "${_projstr_inc}" "${_expcfg_inc}" "${_cpdhelp_inc}" "${_calibdlg_inc}" "${_calibpl_inc}" "${_calibut_inc}" "${_shaper_inc}" "${_oauth_types_inc}" "${_oauth_fns_inc}" "${_ppd_inc}" "${_selclip_decl_inc}" "${_selclip_inc}" "${_selclipfn_inc}" "${_snz_inc}" "${_hint_types_inc}" "${_hint_fns_inc}" "${_hint_db_inc}" "${_hint_cereal_inc}" "${_about_inc}" "${_nettest_inc}" "${_nettest_types_inc}" "${_legacy_inc}" "${_ts_inc}" "${_upd_inc}" "${_bench_inc}" "${_bench_fns_inc}" ${_sd_types_inc} ${_sd_reg_inc} ${_sd_regfns_inc} ${_sd_cat_inc} ${_sd_dlg_inc} "${_egc_inc}" "${_egc_types_inc}" "${_imex_types_inc}" "${_imex_inc}" "${_imexplate_inc}" ${_webdlg_incs} "${_nav_inc}" "${_imstyle_inc}" ${_com_incs} ${_asm_incs} "${_cloud_inc}" "${_c3dp_inc}" "${_ffsend_inc}" "${_kb_inc}" "${_pubdlg_inc}" "${_plugapp_inc}" "${_fil_inc}" "${_belt_inc}" "${_align_inc}" "${_td_inc}")
+add_custom_target(orcacore_extracted DEPENDS "${_cut_inc}" "${_plate_inc}" "${_patch_inc}" "${_ears_inc}" "${_emboss_inc}" "${_textlines_inc}" "${_drag_inc}" "${_svg_inc}" "${_publish_inc}" "${_vgexp_inc}" "${_prefs_inc}" "${_homestr_inc}" "${_projstr_inc}" "${_expcfg_inc}" "${_cpdhelp_inc}" "${_cprn_types_inc}" "${_cprn_inc}" "${_calibdlg_inc}" "${_calibpl_inc}" "${_calibut_inc}" "${_shaper_inc}" "${_oauth_types_inc}" "${_oauth_fns_inc}" "${_ppd_inc}" "${_selclip_decl_inc}" "${_selclip_inc}" "${_selclipfn_inc}" "${_snz_inc}" "${_hint_types_inc}" "${_hint_fns_inc}" "${_hint_db_inc}" "${_hint_cereal_inc}" "${_about_inc}" "${_nettest_inc}" "${_nettest_types_inc}" "${_legacy_inc}" "${_ts_inc}" "${_upd_inc}" "${_bench_inc}" "${_bench_fns_inc}" ${_sd_types_inc} ${_sd_reg_inc} ${_sd_regfns_inc} ${_sd_cat_inc} ${_sd_dlg_inc} "${_egc_inc}" "${_egc_types_inc}" "${_imex_types_inc}" "${_imex_inc}" "${_imexplate_inc}" ${_webdlg_incs} "${_nav_inc}" "${_imstyle_inc}" ${_com_incs} ${_asm_incs} "${_cloud_inc}" "${_c3dp_inc}" "${_ffsend_inc}" "${_kb_inc}" "${_pubdlg_inc}" "${_plugapp_inc}" "${_fil_inc}" "${_belt_inc}" "${_align_inc}" "${_td_inc}")
 file(GLOB_RECURSE _shim_headers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shim/*")
 foreach (_f ${_shim_headers})
     file(RELATIVE_PATH _rel "${CMAKE_CURRENT_SOURCE_DIR}/shim" "${_f}")

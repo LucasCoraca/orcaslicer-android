@@ -4,7 +4,8 @@ class or a GUI translation unit (e.g. GLGizmoCut3D::its_make_groove_plane, Embos
 unchanged by the mobile core.
 
 usage: extract_functions.py <source.cpp> <ClassName|-> <NewClass|-> <out.inc> [--sub OLD NEW]... <function> [<function> ...]
-A function given as "class Name" (or "struct" / "enum") copies that whole definition (nested ones too).
+A function given as "class Name" (or "struct" / "enum") copies that whole definition (nested ones too); "var name"
+copies a file-scope variable with a braced initializer (a table).
 With a class, each function is found as "ClassName::function(" and "ClassName::" is renamed to "NewClass::"; with "-"
 free functions are copied (a "template<...>" line right above is kept). A function given with its opening parenthesis
 and the start of its parameter list (e.g. "get_extruders(bool conside_custom_gcode, const") picks one overload.
@@ -75,6 +76,13 @@ for f in funcs:
             sys.exit(f'{f} not found in {src}')
         end = matching(m.end() - 1, '{', '}')
         parts.append(text[m.start():end + 1] + ';\n')
+        continue
+    if f.startswith('var '):   # a variable at file scope with a braced initializer, up to its ';'
+        m = re.search(r'^[^\n;{}]*\b' + re.escape(f[4:]) + r'\s*=\s*\n?\s*\{', text, re.M)
+        if not m:
+            sys.exit(f'{f} not found in {src}')
+        end = matching(m.end() - 1, '{', '}')
+        parts.append(text[m.start():text.index(';', end) + 1] + '\n')
         continue
     name = re.escape(f).replace(r'\ ', r'\s+') if '(' in f else re.escape(f) + r'\s*\('
     prefix = '' if cls == '-' else re.escape(cls) + r'::'

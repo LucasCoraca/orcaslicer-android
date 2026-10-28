@@ -316,9 +316,11 @@ fun ModeSwitch(m: ParamsModel) {
     }
 }
 
-/** A preset list grouped like the desktop combos: project / user presets first, then system ones by vendor. */
+/** A preset list grouped like the desktop combos: project / user presets first, then system ones by vendor; [actions]
+ *  are the combo's last items (PlaterPresetComboBox: "Add/Remove filament", "Create printer", ...). */
 @Composable
-fun PresetPicker(list: List<JSONObject>, selected: String, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
+fun PresetPicker(list: List<JSONObject>, selected: String, onDismiss: () -> Unit, actions: List<Pair<String, () -> Unit>> = emptyList(),
+                 onSelect: (String) -> Unit) {
     var filter by remember { mutableStateOf("") }
     val c = desk()
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -347,6 +349,13 @@ fun PresetPicker(list: List<JSONObject>, selected: String, onDismiss: () -> Unit
                                 }
                                 Text(p.optString("label"), Modifier.weight(1f), style = deskText(14, color = if (!p.optBoolean("compatible", true)) OrcaColors.error else c.text))
                             }
+                        }
+                    }
+                    if (filter.isBlank()) items(actions, key = { "action/" + it.first }) { (label, run) ->
+                        Row(Modifier.fillMaxWidth().clickable { onDismiss(); run() }.padding(horizontal = 14.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            OrcaIcon("edit", 16.dp); Spacer(Modifier.width(8.dp))
+                            Text(label, style = deskText(14))
                         }
                     }
                 }
