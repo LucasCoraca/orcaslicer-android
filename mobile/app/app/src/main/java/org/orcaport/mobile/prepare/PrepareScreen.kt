@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -94,7 +95,7 @@ private fun Canvas(app: AppState, modifier: Modifier, preview: Boolean, collapse
     }
     // the GL view and its listener outlive a switch between Prepare and Preview: they read the current tab
     val previewNow by androidx.compose.runtime.rememberUpdatedState(preview)
-    Box(modifier.background(desk().panel)) {
+    Box(modifier.clipToBounds().background(desk().panel)) {   // the canvas's labels (plate numbers, object names) stay inside it
         ghost?.let { g -> ImexGhostPopup(app, g) { ghost = null } }
         AndroidView(factory = { c ->
             GLView(c, object : GLView.Listener {
