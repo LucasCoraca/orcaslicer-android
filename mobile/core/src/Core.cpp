@@ -4,6 +4,9 @@
 #include "slic3r/GUI/MainFrame.hpp"
 
 #include <cctype>
+#include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <boost/filesystem.hpp>
 #include <boost/log/trivial.hpp>
 
@@ -136,6 +139,26 @@ static void check_installed_vendor_profiles(AppConfig &app_config)
         install_vendor_bundles_from_resources(std::vector<std::string>(bundles.begin(), bundles.end()));
 }
 
+// libcurl wants one PEM bundle (the desktop's distro file); Android keeps its trust store as a directory of PEM files
+// (the updatable APEX one first). Concatenated at each start; Http hands it to curl as SSL_CERT_FILE.
+static void build_ca_bundle(const fs::path &out)
+{
+    for (const char *d : {"/apex/com.android.conscrypt/cacerts", "/system/etc/security/cacerts"}) {
+        boost::system::error_code ec;
+        if (!fs::is_directory(d, ec)) continue;
+        std::string pem;
+        for (fs::directory_iterator it(d, ec), end; !ec && it != end; it.increment(ec)) {
+            std::ifstream in(it->path().string(), std::ios::binary);
+            if (in) pem += std::string(std::istreambuf_iterator<char>(in), {}) + "\n";
+        }
+        if (pem.empty()) continue;
+        std::ofstream(out.string(), std::ios::binary | std::ios::trunc) << pem;
+        ::setenv("SSL_CERT_FILE", out.string().c_str(), 1);
+        return;
+    }
+    BOOST_LOG_TRIVIAL(error) << "no system CA store: HTTPS with certificate checks will fail";
+}
+
 void backup_init();
 void cloud_init();
 void plugins_init();
@@ -157,6 +180,7 @@ json Core::init(const std::string &resources, const std::string &data, const std
     set_temporary_dir((fs::path(data) / "tmp").string());
     fs::create_directories(fs::path(data) / "log");
     set_log_path_and_level("debug", 3);
+    build_ca_bundle(fs::path(data) / "cacert.pem");
 
     app_config = std::make_unique<AppConfig>();
     const bool app_conf_exists = app_config->exists();

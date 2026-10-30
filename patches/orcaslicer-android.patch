@@ -11032,6 +11032,22 @@ index ca69b7719..5a23d8180 100644
  #define EXIST_FONT_CONFIG_INCLUDE
  #endif
  
+diff --git a/src/slic3r/Utils/Http.cpp b/src/slic3r/Utils/Http.cpp
+index c09c22fe3..584549a0d 100644
+--- a/src/slic3r/Utils/Http.cpp
++++ b/src/slic3r/Utils/Http.cpp
+@@ -216,6 +216,11 @@ Http::priv::priv(const std::string &url)
+ #endif
+ 	::curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+ 	::curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
++#ifdef __ANDROID__
++	// ORCA Android: curl's built-in CA path does not exist there; the app writes the system trust store to SSL_CERT_FILE
++	if (const char *ca_file = ::getenv("SSL_CERT_FILE"))
++		::curl_easy_setopt(curl, CURLOPT_CAINFO, ca_file);
++#endif
+ 
+ 	// https://everything.curl.dev/http/post/expect100.html
+ 	// remove the Expect: header, it will add a second delay to each request,
 diff --git a/src/slic3r/Utils/RetinaHelper.hpp b/src/slic3r/Utils/RetinaHelper.hpp
 index 336fc17c4..306d1194d 100644
 --- a/src/slic3r/Utils/RetinaHelper.hpp
