@@ -3442,6 +3442,43 @@ index 5ec47e916..7022306ab 100644
      shell.row.ondblclick = function () { sel = { zone: "list", i: i }; jumpToTab(t); };
      return shell.row;
  }
+diff --git a/resources/web/guide/21/common.css b/resources/web/guide/21/common.css
+index 992c55d7a..ba8884836 100644
+--- a/resources/web/guide/21/common.css
++++ b/resources/web/guide/21/common.css
+@@ -445,3 +445,17 @@ img.ModelThumbnail {
+ 	display: flex;
+ 	justify-content:flex-end;
+ }
++
++/* ORCA narrow windows (phones in portrait): as many columns as fit instead of a fixed count that overflows the page */
++@media (max-width: 600px) {
++	.PrinterArea,
++	#Content[layout="compact-list"] .PrinterArea,
++	#Content[layout="compact-cover"] .PrinterArea {
++		grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
++	}
++	#NoticeBody {
++		width: calc(100% - 32px);
++		left: 16px;
++		margin-left: 0;
++	}
++}
+diff --git a/resources/web/guide/css/common.css b/resources/web/guide/css/common.css
+index 8e6798dc3..94591a8c5 100644
+--- a/resources/web/guide/css/common.css
++++ b/resources/web/guide/css/common.css
+@@ -182,3 +182,10 @@ input[type="checkbox"]:indeterminate::before {
+ 
+ 
+ 
++
++/* ORCA narrow windows (phones in portrait): the page fills the window instead of stopping at the desktop dialog's height */
++@media (max-width: 600px) {
++	body {
++		max-height: none;
++	}
++}
 diff --git a/resources/web/homepage/css/home.css b/resources/web/homepage/css/home.css
 index a90a8520b..2dee910c2 100644
 --- a/resources/web/homepage/css/home.css
@@ -8866,6 +8903,43 @@ index c6617af50..a9e4d04ea 100644
      gladLoaderUnloadGLES2();
  #else
      gladLoaderUnloadGL();
+diff --git a/src/libvgcode/src/ShadersES.hpp b/src/libvgcode/src/ShadersES.hpp
+index 12871f624..7be34c764 100644
+--- a/src/libvgcode/src/ShadersES.hpp
++++ b/src/libvgcode/src/ShadersES.hpp
+@@ -12,7 +12,9 @@ namespace libvgcode {
+ 
+ static const char* Segments_Vertex_Shader_ES =
+ "#version 300 es\n"
+-"precision lowp usampler2D;\n"
++// ORCA: lowp samplers are 16-bit on phone GPUs: segment ids wrapped at 65536 and the preview stopped after ~100 layers
++"precision highp usampler2D;\n"
++"precision highp sampler2D;\n"
+ "#define POINTY_CAPS\n"
+ "#define FIX_TWISTING\n"
+ "uniform vec3 light_top_dir;\n"
+@@ -183,7 +185,9 @@ static const char* Segments_Vertex_Shader_ES =
+ // ORCA: realistic view - shadow caster, one light facing ribbon per segment, not instanced as tiny instances are slow.
+ static const char* Segments_Shadow_Caster_Vertex_Shader_ES =
+ "#version 300 es\n"
+-"precision lowp usampler2D;\n"
++// ORCA: lowp samplers are 16-bit on phone GPUs: segment ids wrapped at 65536 and the preview stopped after ~100 layers
++"precision highp usampler2D;\n"
++"precision highp sampler2D;\n"
+ "const vec3 UP = vec3(0, 0, 1);\n"
+ "const int CORNERS[6] = int[](0, 1, 2, 0, 2, 3);\n"
+ "uniform mat4 view_matrix;\n"
+@@ -340,7 +344,9 @@ static const char* Segments_Fragment_Shader_ES =
+ 
+ static const char* Options_Vertex_Shader_ES =
+ "#version 300 es\n"
+-"precision lowp usampler2D;\n"
++// ORCA: lowp samplers are 16-bit on phone GPUs: segment ids wrapped at 65536 and the preview stopped after ~100 layers
++"precision highp usampler2D;\n"
++"precision highp sampler2D;\n"
+ "const vec3  light_top_dir = vec3(-0.4574957, 0.4574957, 0.7624929);\n"
+ "const float light_top_diffuse = 0.6 * 0.8;\n"
+ "const float light_top_specular = 0.6 * 0.125;\n"
 diff --git a/src/slic3r/CMakeLists.txt b/src/slic3r/CMakeLists.txt
 index 367aadaa2..2f1a19073 100644
 --- a/src/slic3r/CMakeLists.txt
