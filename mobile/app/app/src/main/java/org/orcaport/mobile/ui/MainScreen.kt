@@ -316,15 +316,21 @@ private fun MainMenu(app: AppState, open: Boolean, onDismiss: () -> Unit) {
 fun SubMenu(label: String, content: @Composable ColumnScope.(close: () -> Unit) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        DropdownMenuItem(text = { Text(label, style = deskText(14)) }, onClick = { open = true },
+        DropdownMenuItem(text = { Text(label, style = deskText(14)) }, onClick = { open = true }, modifier = menuItemHeight(),
             trailingIcon = { Text("›", style = deskText(16, color = desk().textDim)) })
         SubMenuPopup(open, { open = false }) { content { open = false } }
     }
 }
 
+/** menu entries are 48dp (Material) but shorter on a phone in landscape, so a long menu (Calibration) fits on the screen */
+@Composable
+fun menuItemHeight(): Modifier =
+    if (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 500) Modifier.height(36.dp) else Modifier
+
 @Composable
 fun MenuItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, enabled: Boolean = true, keys: String = "", onClick: () -> Unit) =
     DropdownMenuItem(text = { Text(label, style = deskText(14, color = if (enabled) desk().text else desk().textDisabled)) }, onClick = onClick, enabled = enabled,
+        modifier = menuItemHeight(),
         leadingIcon = icon?.let { { Icon(it, null) } },
         // the menu accelerator (shortcut_label): the shortcut's current key
         trailingIcon = if (keys.isNotEmpty()) ({ Text(keys, style = deskText(13, color = desk().textDim)) }) else null)
