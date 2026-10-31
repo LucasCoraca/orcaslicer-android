@@ -350,7 +350,35 @@ void Gizmos::render(const std::vector<RenderVolume> &vols, unsigned revision, co
             dr.mesh(cone_mesh(), base * Geometry::translation_transform(Vec3d(1.25 * size, 0, len)) * Geometry::rotation_transform(0.5 * PI * Vec3d::UnitY()) * Geometry::scale_transform(cone_scale), ColorRGBA::Y());
             dr.mesh(cone_mesh(), base * Geometry::translation_transform(Vec3d(-1.25 * size, 0, len)) * Geometry::rotation_transform(-0.5 * PI * Vec3d::UnitY()) * Geometry::scale_transform(cone_scale), ColorRGBA::Y());
         }
-        if (g == 1 || g == 2) dr.lines({to_world(Vec3d::Zero()), to_world(len * Vec3d::UnitZ())}, g == 1 ? ColorRGBA::X() : ColorRGBA::Y());
+        if (g == 1 || g == 2) {
+            const ColorRGBA axis_clr = g == 1 ? ColorRGBA::X() : ColorRGBA::Y();
+            dr.lines({to_world(Vec3d::Zero()), to_world(len * Vec3d::UnitZ())}, axis_clr);
+            // render_rotation_snapping, in the plane of the rotation as the drag started (m_start_dragging_m): the circle with its
+            // 5 degree scale, the 45 degree snap radii, the reference radius and the angle arc
+            const Vec3d axis = (m_drag.cut_rotation.linear() * Vec3d::Unit(g == 1 ? 0 : 1)).normalized();
+            const Vec3d u = (m_drag.cut_rotation.linear() * Vec3d::UnitZ()).normalized(), v = axis.cross(u);
+            const double R = 0.85 * len;   // m_grabber_radius
+            auto at = [&](double a, double rr) { return Vec3d(m_cut.center + rr * (std::cos(a) * u + std::sin(a) * v)); };
+            std::vector<Vec3d> circle, marks;
+            for (unsigned k = 0; k < ROTATE_SCALE_STEPS; ++k) {
+                const double a = k * 2 * PI / ROTATE_SCALE_STEPS;
+                circle.push_back(at(a, R));
+                marks.push_back(at(a, R));
+                marks.push_back(at(a, R * (k % ROTATE_SCALE_LONG_EVERY == 0 ? 1 + ROTATE_SCALE_LONG_TOOTH : 1 + 0.5 * ROTATE_SCALE_LONG_TOOTH)));
+            }
+            for (unsigned k = 0; k < ROTATE_SNAP_REGIONS; ++k) {
+                const double a = k * 2 * PI / ROTATE_SNAP_REGIONS;
+                marks.push_back(at(a, R / 3));
+                marks.push_back(at(a, 2 * R / 3));
+            }
+            marks.push_back(m_cut.center);
+            marks.push_back(at(0, len));
+            dr.lines(circle, ColorRGBA::WHITE(), GL_LINE_LOOP);
+            dr.lines(marks, ColorRGBA::WHITE());
+            std::vector<Vec3d> arc;
+            for (unsigned k = 0; k <= ROTATE_ANGLE_RESOLUTION; ++k) arc.push_back(at(m_drag.value * k / ROTATE_ANGLE_RESOLUTION, len));
+            dr.lines(arc, axis_clr, GL_LINE_STRIP);
+        }
         return;
     }
 
@@ -618,8 +646,13 @@ void Gizmos::drag_move(const Camera &cam, double px, double py)
             Vec3d hit = ray_plane(o, d, m_cut.center, axis) - m_cut.center;
             Vec3d u = (dg.cut_rotation.linear() * Vec3d::UnitZ()).normalized(), v = axis.cross(u);
             double theta = std::atan2(hit.dot(v), hit.dot(u)) - dg.start_angle;
-            const double len = hit.norm(), r = 0.5 * m_cut.radius;
-            if (len > 0.85 * r && len < 1.15 * r) { const double step = 2 * PI / 72; theta = step * std::round(theta / step); }
+            // the coarse region (45 degrees) between a third and two thirds of the circle, the fine one (the scale) around its edge
+            const double len = hit.norm(), r = 0.5 * m_cut.radius, coarse_in = 0.85 * r / 3;
+            double step = 0;
+            if (len >= coarse_in && len <= 2 * coarse_in) step = 2 * PI / ROTATE_SNAP_REGIONS;
+            else if (len > 0.85 * r && len < 1.15 * r) step = 2 * PI / ROTATE_SCALE_STEPS;
+            if (step > 0) theta = step * std::round(theta / step);
+            dg.value = theta;
             m_cut.rotation = Transform3d(Eigen::AngleAxisd(theta, axis)) * dg.cut_rotation;
         }
         return;
