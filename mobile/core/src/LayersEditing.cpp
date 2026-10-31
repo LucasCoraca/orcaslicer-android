@@ -17,6 +17,7 @@ using namespace Slic3r;
 namespace orca {
 
 static const float THICKNESS_BAR_WIDTH = 70.0f;
+static const float BAR_TOP = 56.0f;   // dp, the toolbar row (the gizmo panels start at 60 dp)
 
 LayersEditing &LayersEditing::get()
 {
@@ -38,6 +39,9 @@ int LayersEditing::object()
 
 // the bar is THICKNESS_BAR_WIDTH dp wide at the right edge (thickness_bar_width: x the scale factor)
 float LayersEditing::bar_width() const { return THICKNESS_BAR_WIDTH * Gizmos::get().ui_scale(); }
+// the bar starts under the app's toolbar over the top of the 3D view (on the desktop the toolbar is narrower than the
+// canvas and leaves the right edge free; on a phone it covered the top of the bar, issue #5)
+float LayersEditing::bar_top() const { return BAR_TOP * Gizmos::get().ui_scale(); }
 
 // layers_height_allowed: one FFF object above the bed
 static int selected_object()
@@ -188,7 +192,7 @@ float LayersEditing::cursor_z_relative() const
 {
     if (m_cursor_y < 0) return -1000.f;
     const Camera cam = Viewport::get().camera();
-    const float b = float(cam.height), t = 0.f;
+    const float b = float(cam.height), t = bar_top();
     return float((b - m_cursor_y - 1.0) / (b - t - 1.0));
 }
 
@@ -197,7 +201,7 @@ bool LayersEditing::bar_contains(double px, double py)
     std::lock_guard<std::recursive_mutex> l(m_mutex);
     if (!m_enabled || m_obj < 0) return false;
     const Camera cam = Viewport::get().camera();
-    return px >= cam.width - bar_width() && px <= cam.width && py >= 0 && py <= cam.height;
+    return px >= cam.width - bar_width() && px <= cam.width && py >= bar_top() && py <= cam.height;
 }
 
 // _perform_layer_editing_action: the touch's height and action, adjust now and again every 100 ms while held
@@ -217,8 +221,8 @@ void LayersEditing::move(double px, double py)
     std::lock_guard<std::recursive_mutex> l(m_mutex);
     if (!m_editing) return;
     const Camera cam = Viewport::get().camera();
-    m_cursor_y = std::clamp(py, 0.0, double(cam.height));
-    last_z = m_object_max_z * float((cam.height - m_cursor_y - 1.0) / double(cam.height));
+    m_cursor_y = std::clamp(py, double(bar_top()), double(cam.height));
+    last_z = m_object_max_z * float((cam.height - m_cursor_y - 1.0) / (cam.height - double(bar_top())));
     // the mouse buttons and Shift: left = decrease (add detail), right = increase, Shift+left = reduce (reset), Shift+right = smooth
     static const LayerHeightEditActionType actions[] = {LAYER_HEIGHT_EDIT_ACTION_DECREASE, LAYER_HEIGHT_EDIT_ACTION_INCREASE,
                                                         LAYER_HEIGHT_EDIT_ACTION_REDUCE, LAYER_HEIGHT_EDIT_ACTION_SMOOTH};
@@ -331,7 +335,7 @@ void LayersEditing::render_overlay()
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_z_texture_id);
     // the colour bar: a quad at the right edge, texture v = height
-    const float lft = 1.0f - 2.0f * bar_width() / cnv_width, r = 1.0f, t = 1.0f, b = -1.0f;
+    const float lft = 1.0f - 2.0f * bar_width() / cnv_width, r = 1.0f, t = 1.0f - 2.0f * bar_top() / cnv_height, b = -1.0f;
     const float quad[] = {lft, b, 0, 0, 0, 1, 0, 0,  r, b, 0, 0, 0, 1, 1, 0,  r, t, 0, 0, 0, 1, 1, 1,
                           r, t, 0, 0, 0, 1, 1, 1,  lft, t, 0, 0, 0, 1, 0, 1,  lft, b, 0, 0, 0, 1, 0, 0};
     if (!m_bar_vao) { glGenVertexArrays(1, &m_bar_vao); glGenBuffers(1, &m_bar_vbo); }
@@ -351,9 +355,9 @@ void LayersEditing::render_overlay()
     glBindTexture(GL_TEXTURE_2D, 0);
     // render_profile: the base layer height line (black) and the profile (blue)
     const float scale_x = bar_width() / float(1.12 * m_slicing_parameters->max_layer_height);
-    const float scale_y = cnv_height / m_object_max_z;
+    const float scale_y = (cnv_height - bar_top()) / m_object_max_z;
     const float axis_x = 2.0f * ((cnv_width - bar_width() + float(m_slicing_parameters->layer_height) * scale_x) / cnv_width - 0.5f);
-    gl_draw_flat({axis_x, -1.f, 0.f, axis_x, 1.f, 0.f}, GL_LINES, I, ColorRGBA::BLACK(), 1.f);
+    gl_draw_flat({axis_x, -1.f, 0.f, axis_x, t, 0.f}, GL_LINES, I, ColorRGBA::BLACK(), 1.f);
     std::vector<float> strip;
     for (size_t i = 0; i + 1 < m_layer_height_profile.size(); i += 2)
         strip.insert(strip.end(), {2.0f * ((cnv_width - bar_width() + float(m_layer_height_profile[i + 1]) * scale_x) / cnv_width - 0.5f),

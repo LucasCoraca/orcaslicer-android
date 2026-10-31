@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -29,6 +30,29 @@ import java.util.Locale
 
 // ColorRGBA::X / Y / Z (the axis captions are coloured like the grabbers)
 private val AXIS = listOf(Color(0xFFFF3C5B), Color(0xFF64C818), Color(0xFF2F88E9))
+
+private val PANEL_GIZMOS = setOf("Move", "Rotate", "Scale", "Cut", "Simplify", "Mesh boolean", "Brim ears", "Text shape", "SVG", "Measure",
+    "Assemble", "Variable layer height") + PAINT_GIZMOS
+
+/**
+ * The gizmo's input window with a tab under it that folds it away, so on a phone the model can be seen while the values
+ * set in it are tried (issue #5). Folded, the panel stays composed: what was typed in it is kept.
+ */
+@Composable
+fun CollapsibleGizmoPanel(app: AppState, gizmo: String, modifier: Modifier = Modifier) {
+    if (gizmo !in PANEL_GIZMOS) return
+    var folded by remember(gizmo) { mutableStateOf(false) }
+    val c = desk()
+    Column(modifier) {
+        Box(if (folded) Modifier.height(0.dp).clipToBounds() else Modifier.weight(1f, fill = false)) { GizmoPanel(app, gizmo) }
+        Row(Modifier.padding(top = if (folded) 0.dp else 4.dp).shadow(4.dp, RoundedCornerShape(16.dp)).clip(RoundedCornerShape(16.dp)).background(c.panel)
+            .clickable { folded = !folded }.heightIn(min = 32.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (folded) "▼" else "▲", style = deskText(11, color = c.textDim))
+            Spacer(Modifier.width(8.dp))
+            Text(if (folded) tr(gizmo) else tr("Hide"), style = deskText(13))
+        }
+    }
+}
 
 /**
  * GizmoObjectManipulation's input windows (do_render_move_window / do_render_rotate_window / do_render_scale_window):

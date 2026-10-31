@@ -219,7 +219,7 @@ private fun Canvas(app: AppState, modifier: Modifier, preview: Boolean, collapse
                 }
             }
         }
-        if (!preview) app.gizmo?.let { GizmoPanel(app, it, Modifier.align(Alignment.TopStart).padding(top = 60.dp, start = 8.dp, bottom = 8.dp)) }
+        if (!preview) app.gizmo?.let { CollapsibleGizmoPanel(app, it, Modifier.align(Alignment.TopStart).padding(top = 60.dp, start = 8.dp, bottom = 8.dp)) }
         menu?.let { hit ->
             val d = LocalDensity.current
             val off = with(d) { DpOffset(hit.optDouble("x").toFloat().toDp(), (hit.optDouble("y").toFloat() - 40f).toDp()) }

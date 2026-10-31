@@ -45,6 +45,7 @@ private:
     void generate_layer_height_texture();
     void accept_changes();
     float bar_width() const;
+    float bar_top() const;
     float cursor_z_relative() const;
 
     std::recursive_mutex                m_mutex;
