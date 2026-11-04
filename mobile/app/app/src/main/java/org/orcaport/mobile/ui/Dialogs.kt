@@ -45,8 +45,57 @@ fun AskHost(asks: List<Ask>) {
         "cloud_auth" -> CloudAuthAsk(ask)
         "3dprinteros_upload" -> UploadOptionsAsk(ask)
         "plugin_picker" -> PluginPickerAsk(ask)
+        "step_mesh" -> StepMeshAsk(ask)
         else -> ask.reply(JSONObject())
     }
+}
+
+/**
+ * StepMeshDialog: the linear / angle deflection the STEP file is meshed with, before it is imported (issue #6: an
+ * unanswered question read as Cancel and the file never appeared). The desktop's facet count preview is left out.
+ */
+@Composable
+private fun StepMeshAsk(ask: Ask) {
+    val r = ask.request
+    fun num(v: Double, d: Int) = String.format(java.util.Locale.ROOT, "%.${d}f", v)
+    var linear by remember(ask) { mutableStateOf(num(r.optDouble("linear", 0.003), 3)) }
+    var angle by remember(ask) { mutableStateOf(num(r.optDouble("angle", 0.5), 2)) }
+    var split by remember(ask) { mutableStateOf(r.optBoolean("split")) }
+    var saveDefault by remember(ask) { mutableStateOf(false) }
+    var dsa by remember(ask) { mutableStateOf(false) }
+    var error by remember(ask) { mutableStateOf<String?>(null) }
+    fun parse(s: String) = s.replace(',', '.').toDoubleOrNull()
+    fun ok() {
+        val l = parse(linear); val a = parse(angle)
+        // validate_number_range
+        if (l == null || l < 0.001 || l > 0.1) { error = tr("Please input a valid value (0.001 < linear deflection < 0.1)"); return }
+        if (a == null || a < 0.01 || a > 1.0) { error = tr("Please input a valid value (0.01 < angle deflection < 1.0)"); return }
+        ask.reply(JSONObject().put("ok", true).put("linear", l).put("angle", a).put("split", split).put("save_default", saveDefault).put("dsa", dsa))
+    }
+    fun cancel() = ask.reply(JSONObject().put("ok", false))
+    @Composable fun check(label: String, value: Boolean, onChange: (Boolean) -> Unit) =
+        Row(Modifier.fillMaxWidth().clickable { onChange(!value) }, verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(value, onChange); Text(label, style = MaterialTheme.typography.bodyMedium)
+        }
+    AlertDialog(
+        onDismissRequest = { },
+        title = { Text(tr("Step file import parameters")) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(tr("Smaller linear and angular deflections result in higher-quality transformations but increase the processing time."),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(linear, { linear = it; error = null }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(tr("Linear Deflection")) })
+                OutlinedTextField(angle, { angle = it; error = null }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(tr("Angle Deflection")) })
+                error?.let { Text(it, color = OrcaColors.error, style = MaterialTheme.typography.bodySmall) }
+                check(tr("Split compound and compsolid into multiple objects"), split) { split = it }
+                check(tr("Save these settings as default"), saveDefault) { saveDefault = it }
+                check(tr("Don't show again"), dsa) { dsa = it }
+            }
+        },
+        confirmButton = { TextButton(::ok) { Text(tr("OK")) } },
+        dismissButton = { TextButton(::cancel) { Text(tr("Cancel")) } },
+    )
+    androidx.activity.compose.BackHandler { cancel() }
 }
 
 @Composable

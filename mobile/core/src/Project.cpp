@@ -17,6 +17,7 @@
 #include "libslic3r/GCode/GCodeProcessor.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include <climits>
+#include "libslic3r/LocalesUtils.hpp"
 #include "libslic3r/ParameterUtils.hpp"
 #include "libslic3r/FilamentMixer.hpp"
 #include "libslic3r/Print.hpp"
@@ -434,9 +435,16 @@ static json load_files(const json &a)
                         },
                         [&](Step &, double &linear_value, double &angle_value, bool &is_split) -> int {
                             if (core.app_config->get_bool("enable_step_mesh_setting")) {
+                                // StepMeshDialog (Dialogs.kt StepMeshAsk)
                                 json ans = Host::ask({{"kind", "step_mesh"}, {"linear", linear}, {"angle", angle}, {"split", split_compound}});
                                 if (!ans.value("ok", false)) return -1;
                                 linear_value = ans.value("linear", linear); angle_value = ans.value("angle", angle); is_split = ans.value("split", split_compound);
+                                if (ans.value("dsa", false)) core.app_config->set_bool("enable_step_mesh_setting", false);
+                                if (ans.value("save_default", false)) {
+                                    core.app_config->set_bool("is_split_compound", is_split);
+                                    core.app_config->set("linear_deflection", float_to_string_decimal_point(linear_value, 3));
+                                    core.app_config->set("angle_deflection", float_to_string_decimal_point(angle_value, 2));
+                                }
                                 return 1;
                             }
                             linear_value = linear; angle_value = angle; is_split = split_compound;
