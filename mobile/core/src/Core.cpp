@@ -235,7 +235,8 @@ json Core::init(const std::string &resources, const std::string &data, const std
 
     return {{"version", SoftFever_VERSION},
             {"first_run", !app_conf_exists || preset_bundle->printers.only_default_printers()},
-            {"error", load_error}};
+            {"error", load_error},
+            {"language", current_language().empty() ? std::string("en") : current_language()}};
 }
 
 const DynamicPrintConfig &Core::full_config()

@@ -30,7 +30,7 @@ fun OrcaWebPage(url: String, startScript: String, modifier: Modifier, handle: We
     // WebView::RecreateAll's user agent: Orca's pages take their dark style from "(dark)" (globalapi.js ExecuteDarkMode)
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
     fun agent(stock: String) = stock + " BBL-Slicer/v01.09.00 (" + (if (dark) "dark" else "light") + ") BBL-Language/" +
-        java.util.Locale.getDefault().language + " OrcaSlicer"
+        Tr.language + " OrcaSlicer"
     AndroidView(modifier = modifier, update = { v ->
         // the system theme changed: the new agent, and a reload so navigator.userAgent has it
         val stock = v.tag as? String ?: return@AndroidView

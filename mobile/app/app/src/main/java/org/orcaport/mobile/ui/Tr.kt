@@ -8,6 +8,8 @@ import org.orcaport.mobile.engine.Native
  */
 object Tr {
     @Volatile var ready = false
+    /** the language the app runs in (the web pages' BBL-Language) */
+    @Volatile var language: String = java.util.Locale.getDefault().language
     private val cache = java.util.concurrent.ConcurrentHashMap<String, String>()
     fun reset() = cache.clear()
     fun get(s: String, ctx: String? = null): String {

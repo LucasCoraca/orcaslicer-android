@@ -7,16 +7,20 @@
 #include "Core.hpp"
 #include "Host.hpp"
 #include "Plater.hpp"
+#include "I18n.hpp"
 #include "Viewport.hpp"
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/Format/bbs_3mf.hpp"
 #include "libslic3r/Utils.hpp"
 #include "slic3r/GUI/I18N.hpp"
+#include "slic3r/GUI/MsgDialog.hpp"
 
 using namespace Slic3r;
 namespace fs = boost::filesystem;
 
 namespace orca {
+
+int close_with_confirm();   // Project.cpp
 
 namespace {
 
@@ -71,6 +75,20 @@ json languages()
     return out;
 }
 
+// the language the app runs in: the catalog loaded at start (Preferences, else the device's), English without one
+std::string active_language() { return current_language().empty() ? std::string("en") : current_language(); }
+
+// PreferencesDialog::create_item_language_combobox: the stored language selects its row, a full locale ("de_DE")
+// its language's; nothing stored (the device's language) shows the language in use, so English can be picked
+std::string shown_language()
+{
+    const std::string l = Core::get().app_config->get("language");
+    if (l.empty()) return active_language();
+    for (const json &o : languages())
+        if (o["value"] == l) return l;
+    return l.substr(0, l.find('_'));
+}
+
 json prefs_get(const json &)
 {
     AppConfig &cfg = *Core::get().app_config;
@@ -86,7 +104,7 @@ json prefs_get(const json &)
             if (!key.empty()) it["value"] = cfg.get(key);
             if (kind == "language") {
                 it["options"] = languages();
-                it["value"] = cfg.get("language");
+                it["value"] = shown_language();
             } else if (kind == "backup") {
                 it["value"] = cfg.get("backup_switch") == "true";
                 it["interval"] = cfg.get("backup_interval").empty() ? std::string("10") : cfg.get("backup_interval");
@@ -135,7 +153,17 @@ json prefs_set(const json &a)
         set_logging_level(level_string_to_boost(level));
         cfg.set("log_severity_level", level);
     } else if (kind == "language") {
-        cfg.set("language", a.at("value").get<std::string>());
+        // PreferencesDialog: switching restarts the app (the desktop recreates its GUI) once the user agrees,
+        // an unsaved project is saved first when the user wants
+        const std::string lang = a.at("value").get<std::string>();
+        if (lang == shown_language()) return prefs_get(a);
+        GUI::MessageDialog msg(nullptr, _L("Switching languages requires the application to restart.\n") + "\n" + _L("Do you want to continue?"),
+                          _L("Language selection"), wxICON_QUESTION | wxOK | wxCANCEL);
+        if (msg.ShowModal() == wxID_CANCEL || close_with_confirm() == wxID_CANCEL) return prefs_get(a);
+        cfg.set("language", lang);
+        cfg.save();
+        Host::event("restart_app", json::object());
+        return prefs_get(a);
     } else if (kind == "button") {
         if (a.contains("clear")) cfg.set(a["clear"].get<std::string>(), "");
         if (a.contains("erase")) cfg.erase(a["erase"][0].get<std::string>(), a["erase"][1].get<std::string>());

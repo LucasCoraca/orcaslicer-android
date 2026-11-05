@@ -53,6 +53,7 @@ class Engine(private val ctx: Context) {
         progress("Loading printer & filament profiles")
         val lang = Locale.getDefault().language
         val r = unwrap(Native.init(host, resourcesDir.absolutePath, dataDir.absolutePath, lang)) as JSONObject
+        org.orcaport.mobile.ui.Tr.language = r.optString("language", lang).substringBefore('_')   // Preferences', else the device's
         ready = true
         r
     }
