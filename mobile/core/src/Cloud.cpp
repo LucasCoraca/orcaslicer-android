@@ -210,7 +210,11 @@ struct CloudApp
     template<class... A> void Bind(A &&...) {}
     void run_script(const wxString &js) { orca::Host::event("home_script", {{"script", js.ToStdString()}}); }
     std::string get_printer_cloud_provider() const { return ORCA_CLOUD_PROVIDER; }
-    void check_legacy_user_filament_presets(bool by_user) { orca::Core::get().call("presets.migrate_legacy", {{"by_user", by_user}}); }
+    void check_legacy_user_filament_presets(bool by_user)
+    {
+        m_legacy_filament_check_due = false;   // answered (GUI_App::check_legacy_user_filament_presets)
+        orca::Core::get().call("presets.migrate_legacy", {{"by_user", by_user}});
+    }
     bool check_and_keep_current_preset_changes(const wxString &, const wxString &, int, bool *transfer = nullptr)
     {
         if (transfer) *transfer = false;
@@ -539,6 +543,16 @@ void cloud_update_bundle(const std::string &id)
     app().update_single_bundle(evt);
 }
 bool cloud_unsubscribe_bundle(const std::string &id) { return g_agent && app().unsubscribe_bundle(id); }
+
+// GUI_App::check_legacy_user_filament_presets: the startup check waits for a pending pull of the user presets (the
+// local copies may lack the cloud's); the pull runs it once the pulled presets are loaded
+bool cloud_defer_legacy_filament_check()
+{
+    cloud::CloudApp &a = app();
+    if (!a.m_user_preset_pull_pending) return false;
+    a.m_legacy_filament_check_due = true;
+    return true;
+}
 
 // GUI_App::open_orca_cloud: the pane's Start URL (cloud_webview_handoff), or the plain cloud page without an agent
 static json cloud_open_pane(const json &a)

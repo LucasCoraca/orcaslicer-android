@@ -14,7 +14,9 @@
 #include "slic3r/GUI/MsgDialog.hpp"
 #include "slic3r/GUI/format.hpp"
 
-namespace orca { namespace legacy {
+namespace orca {
+bool cloud_defer_legacy_filament_check();   // Cloud.cpp
+namespace legacy {
 using namespace Slic3r;
 using namespace Slic3r::GUI;
 
@@ -41,7 +43,7 @@ struct LegacyApp
     std::vector<Tab *> tabs_list;
     bool               m_legacy_filament_check_running{false};
     bool               m_legacy_filament_check_due{false};
-    // presets are not pulled from a cloud yet
+    // a pending cloud pull defers the startup check before it gets here (cloud_defer_legacy_filament_check)
     bool               m_user_preset_pull_pending{false};
     std::atomic<bool>  m_sync_user_presets_now{false};
 
@@ -52,6 +54,7 @@ struct LegacyApp
 
 json check(const json &a)
 {
+    if (!a.value("by_user", false) && cloud_defer_legacy_filament_check()) return nullptr;
     static LegacyApp app;
     app.app_config    = Core::get().app_config.get();
     app.preset_bundle = Core::get().preset_bundle.get();
