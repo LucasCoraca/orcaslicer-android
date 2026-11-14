@@ -128,7 +128,7 @@ fun MainScreen(app: AppState, activity: Activity) {
         if (app.createPrinter) CreatePrinterDialog(app) { app.createPrinter = false }
         app.shortcutsDialog?.let { ctx -> ShortcutsDialog(app, ctx) { app.shortcutsDialog = null } }
         PublishDialog(app)
-        if (app.preferences) PreferencesDialog(app) { app.preferences = false; app.loadPluginPages(); app.call("project.state") { p -> if (p is org.json.JSONObject) app.project = p } }
+        if (app.preferences) PreferencesDialog(app) { app.preferences = false; app.loadPluginPages(); app.loadMousePrefs(); app.call("project.state") { p -> if (p is org.json.JSONObject) app.project = p } }
         if (app.printerHost != null) PrinterHostDialog(app) { app.printerHost = null }
         if (app.dailyTips) DailyTipsWindow(app) { app.dailyTips = false }
         if (app.about) AboutDialog(app) { app.about = false }

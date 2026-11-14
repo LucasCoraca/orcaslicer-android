@@ -71,15 +71,18 @@ fun GizmoPanel(app: AppState, gizmo: String, modifier: Modifier = Modifier) {
     if (gizmo == "Measure" || gizmo == "Assemble") { MeasurePanel(app, modifier); return }
     if (gizmo == "Variable layer height") { LayersEditingPanel(app, modifier); return }
     if (gizmo !in listOf("Move", "Rotate", "Scale")) return
-    var coords by remember(gizmo) { mutableStateOf("world") }
     var info by remember { mutableStateOf(JSONObject()) }
-    var uniform by remember { mutableStateOf(true) }
+    // Rotate always works in world coordinates (do_render_rotate_window shows "World" only)
+    val coords = if (gizmo == "Rotate") "world" else app.gizmoCoords
+    val uniform = app.uniformScale
     LaunchedEffect(app.project, coords, gizmo) {
         app.call("gizmo.info", jobj("coords" to coords)) { if (it is JSONObject) info = it }
     }
     if (info.optBoolean("empty", true)) return
     val single = info.optBoolean("single")
     val part = info.optBoolean("part")
+    // set_coordinates_type(World) when the selection no longer offers the stored choice (several objects)
+    LaunchedEffect(single, gizmo) { if (!single && gizmo != "Rotate" && app.gizmoCoords != "world") app.gizmoCoords = "world" }
     fun input(field: String, axis: Int, value: Double) =
         app.projectCall("gizmo.input", jobj("field" to field, "axis" to axis, "value" to value, "coords" to coords, "uniform" to uniform))
     val c = desk()
@@ -91,9 +94,9 @@ fun GizmoPanel(app: AppState, gizmo: String, modifier: Modifier = Modifier) {
                 when (gizmo) {
                     "Rotate" -> Text(tr("World"), style = deskText(13))
                     else -> {
-                        val modes = buildList { add("World"); if (single) add(if (part) "Part" else "Object") }
+                        val modes = buildList { add(tr("World")); if (single) add(tr(if (part) "Part" else "Object")) }
                         val keys = listOf("world", "object")
-                        if (modes.size > 1) DeskChoice(modes, keys.indexOf(coords).coerceAtLeast(0), Modifier.fillMaxWidth()) { coords = keys[it] }
+                        if (modes.size > 1) DeskChoice(modes, keys.indexOf(coords).coerceAtLeast(0), Modifier.fillMaxWidth()) { app.gizmoCoords = keys[it] }
                         else Text(tr("World"), style = deskText(13))
                     }
                 }
@@ -103,7 +106,7 @@ fun GizmoPanel(app: AppState, gizmo: String, modifier: Modifier = Modifier) {
         }
         when (gizmo) {
             "Move" -> {
-                val label = if (single && coords != "world") "Relative" else "Position"
+                val label = tr(if (single && coords != "world") "Relative" else "Position")
                 ValueRow(label, info.optJSONArray("position"), "mm") { a, v -> input("position", a, v) }
                 if (!info.optBoolean("wipe_tower")) AlignSection(app)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -113,20 +116,26 @@ fun GizmoPanel(app: AppState, gizmo: String, modifier: Modifier = Modifier) {
                 }
             }
             "Rotate" -> {
-                ValueRow("Relative", info.optJSONArray("rotation"), "°") { a, v -> if (v != 0.0) input("rotation", a, v) }
-                if (single) ValueRow("Absolute", info.optJSONArray("absolute_rotation"), "°",
+                ValueRow(tr("Relative"), info.optJSONArray("rotation"), "°") { a, v -> if (v != 0.0) input("rotation", a, v) }
+                if (single) ValueRow(tr("Absolute"), info.optJSONArray("absolute_rotation"), "°",
                     trailing = { ResetIcon("Reset current rotation to real zeros.") { input("reset_rotation", 0, 0.0) } }) { a, v -> input("absolute_rotation", a, v) }
                 Row { Spacer(Modifier.weight(1f)); PanelButton(tr("Done"), primary = true) { app.gizmo = null } }
             }
             "Scale" -> {
-                ValueRow("Scale", info.optJSONArray("scale"), "%",
+                ValueRow(trc("Scale", "Noun"), info.optJSONArray("scale"), "%",
                     trailing = { if (single) ResetIcon("Reset scale") { input("reset_scale", 0, 0.0) } }) { a, v -> input("scale", a, v) }
-                ValueRow("Size", info.optJSONArray("size"), "mm") { a, v -> input("size", a, v) }
+                ValueRow(tr("Size"), info.optJSONArray("size"), tr("mm")) { a, v -> input("size", a, v) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    DeskCheck(uniform) { uniform = it }
+                    DeskCheck(uniform) { app.uniformScale = it }
                     Text(tr("Uniform scale"), style = deskText(13))
                     Spacer(Modifier.weight(1f))
                     PanelButton(tr("Done"), primary = true) { app.gizmo = null }
+                }
+                // m_shortcuts_scale's Ctrl + drag ("Single sided scaling"), which a touch screen cannot hold: dragging a
+                // grabber keeps the opposite one in place (issue #11)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DeskCheck(app.singleSidedScale) { app.singleSidedScale = it; app.updateSingleSided() }
+                    Text(tr("Single sided scaling"), style = deskText(13))
                 }
             }
         }

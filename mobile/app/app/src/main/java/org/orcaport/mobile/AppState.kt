@@ -244,6 +244,29 @@ class AppState(ctx: Context) {
 
     /** the active gizmo (GLGizmosManager), by its toolbar name */
     var gizmo by mutableStateOf<String?>(null)
+    /** GizmoObjectManipulation's m_coordinates_type ("world" / "object") and m_uniform_scale: members of the canvas on the
+     *  desktop, so they outlive the gizmo window (issue #11). Move and Scale share the coordinate system, as upstream. */
+    var gizmoCoords by mutableStateOf("world")
+    var uniformScale by mutableStateOf(true)
+    /** the scale gizmo's "Single sided scaling" (Ctrl + drag on the desktop): the panel's check box or a held hardware Ctrl */
+    var singleSidedScale by mutableStateOf(false)
+    var ctrlHeld = false
+        set(v) { field = v; updateSingleSided() }
+    fun updateSingleSided() = org.orcaport.mobile.engine.Native.vpSingleSided(singleSidedScale || ctrlHeld)
+
+    /** Preferences > Control's mouse rows as GLCanvas3D::on_mouse / on_mouse_wheel read them (issue #9): what dragging
+     *  each button does (0 None, 1 Pan, 2 Rotate), the wheel's direction and whether it zooms toward the pointer */
+    class MousePrefs(val left: Int = 2, val middle: Int = 1, val right: Int = 1, val reverseWheel: Boolean = false, val zoomToMouse: Boolean = false)
+    @Volatile var mouse = MousePrefs()
+    fun loadMousePrefs() = scope.launch {
+        runCatching {
+            suspend fun get(key: String) = (engine.call("app.get", jobj("key" to key)) as? String).orEmpty().trim('"', ' ')
+            suspend fun action(key: String, def: Int) = get(key).toIntOrNull()?.takeIf { it in 0..2 } ?: def
+            suspend fun flag(key: String) = get(key).let { it == "true" || it == "1" }
+            mouse = MousePrefs(action("left_mouse_drag_action", 2), action("middle_mouse_drag_action", 1), action("right_mouse_drag_action", 1),
+                flag("reverse_mouse_wheel_zoom"), flag("zoom_to_mouse"))
+        }
+    }
     /** bumped when a gizmo changed something only the engine knows (the cut plane): the panel reloads */
     var gizmoRevision by mutableIntStateOf(0)
     /** extra arguments of the next gizmo.set (the volume type of "Add part > Text"), and a counter that reopens the same gizmo */
@@ -470,6 +493,7 @@ class AppState(ctx: Context) {
             viewOptions = engine.obj("view.options")
             ready = true
             loadShortcuts()
+            loadMousePrefs()
             loadPluginPages()
             launch { engine.host.events.collect { onEvent(it.kind, it.data) } }
             // what the engine queued while starting (the plugin system's start, GUI_App::CallAfter) runs now

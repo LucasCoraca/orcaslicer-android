@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.opengl.GLSurfaceView
 import android.view.GestureDetector
+import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import org.json.JSONArray
@@ -17,7 +18,8 @@ import kotlin.math.hypot
 /**
  * The 3D view (native renderer in liborcacore, Viewport.cpp). Renders on demand. Touch, as on the desktop canvas
  * with a mouse: tap selects (and picks the plate), long press opens the context menu, a drag that starts on a selected
- * object moves it, other one-finger drags orbit, two fingers pan and pinch-zoom.
+ * object moves it, other one-finger drags orbit, two fingers pan and pinch-zoom. A mouse (e.g. Samsung DeX) works as on
+ * the desktop: the wheel zooms, the right button opens the context menu, the buttons drag as set in Preferences.
  */
 @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
 /** the GL renderer of the 3D view (OpenGLManager::get_gl_info, for the Troubleshoot Center) */
@@ -30,6 +32,8 @@ class GLView(ctx: Context, private val listener: Listener) : GLSurfaceView(ctx) 
     interface Listener {
         fun onPick(hit: JSONObject, add: Boolean)
         fun onLongPress(hit: JSONObject, x: Float, y: Float)
+        /** Preferences' mouse settings (left / middle / right drag action, wheel) */
+        fun mouse(): org.orcaport.mobile.AppState.MousePrefs = org.orcaport.mobile.AppState.MousePrefs()
         /** a drag ended: a JSON array (world delta of a plain move) or a gizmo commit {gizmo, matrix, name} */
         fun onMoved(result: String)
         fun onDoubleTap(hit: JSONObject)
@@ -85,7 +89,8 @@ class GLView(ctx: Context, private val listener: Listener) : GLSurfaceView(ctx) 
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             // GLCanvas3D::on_mouse: a center of mass marker takes the click before the selection
             if (Native.vpComTap(e.x.toDouble(), e.y.toDouble())) { requestRender(); return true }
-            listener.onPick(JSONObject(Native.vpPick(e.x.toDouble(), e.y.toDouble())).put("x", e.x.toDouble()).put("y", e.y.toDouble()), false)
+            // Ctrl + left click adds to the selection ("Select multiple objects")
+            listener.onPick(JSONObject(Native.vpPick(e.x.toDouble(), e.y.toDouble())).put("x", e.x.toDouble()).put("y", e.y.toDouble()), e.metaState and android.view.KeyEvent.META_CTRL_ON != 0)
             return true
         }
         override fun onDoubleTap(e: MotionEvent): Boolean {
@@ -102,7 +107,76 @@ class GLView(ctx: Context, private val listener: Listener) : GLSurfaceView(ctx) 
 
     private var navigating = false   // the finger is on the 3D navigator (GLCanvas3D::_render_3d_navigator)
 
+    private fun isMouse(e: MotionEvent) = e.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE
+    private var mouseButton = 0      // the right / middle mouse button held (MotionEvent.BUTTON_SECONDARY / BUTTON_TERTIARY)
+    private var mouseMoved = false
+    private var mouseLeft = false    // the left mouse button is held: its drag does Preferences' "Left Mouse Drag"
+
+    /** GLCanvas3D::on_mouse for the right and middle buttons: a drag pans / rotates as set, a right click opens the menu */
+    private fun onMouseButton(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val b = e.buttonState
+                mouseButton = when {
+                    b and MotionEvent.BUTTON_PRIMARY != 0 -> 0
+                    b and MotionEvent.BUTTON_SECONDARY != 0 -> MotionEvent.BUTTON_SECONDARY
+                    b and MotionEvent.BUTTON_TERTIARY != 0 -> MotionEvent.BUTTON_TERTIARY
+                    else -> 0
+                }
+                if (mouseButton == 0) return false
+                downX = e.x; downY = e.y; lastX = e.x; lastY = e.y
+                mouseMoved = false
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (mouseButton == 0) return false
+                if (!mouseMoved && hypot(e.x - downX, e.y - downY) > touchSlop) mouseMoved = true
+                if (mouseMoved) {
+                    val p = listener.mouse()
+                    when (if (mouseButton == MotionEvent.BUTTON_SECONDARY) p.right else p.middle) {
+                        1 -> Native.vpPan((e.x - lastX).toDouble(), (e.y - lastY).toDouble())
+                        2 -> Native.vpOrbit((e.x - lastX).toDouble(), (e.y - lastY).toDouble())
+                    }
+                    lastX = e.x; lastY = e.y
+                    requestRender()
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (mouseButton == 0) return false
+                // RightUp without a drag: the context menu of what is under the pointer (on_mouse -> post_event(RBtnEvent))
+                if (e.actionMasked == MotionEvent.ACTION_UP && !mouseMoved && mouseButton == MotionEvent.BUTTON_SECONDARY)
+                    listener.onLongPress(JSONObject(Native.vpPick(e.x.toDouble(), e.y.toDouble())), e.x, e.y)
+                mouseButton = 0
+                return true
+            }
+        }
+        return mouseButton != 0
+    }
+
+    /** the mouse wheel, v > 0 away from the user (GLCanvas3D::on_mouse_wheel, Camera::update_zoom). The Compose host
+     *  calls it: inside Compose the wheel arrives as a Scroll pointer event, not as a generic motion event of this view. */
+    fun onWheel(v: Float, x: Float, y: Float) {
+        if (v == 0f) return
+        val p = listener.mouse()
+        val delta = (if (p.reverseWheel) -v else v).toDouble().coerceIn(-4.0, 4.0)
+        val factor = 1.0 / (1.0 - delta * 0.1)   // Camera::ZoomUnit
+        if (p.zoomToMouse) Native.vpZoom(factor, x.toDouble(), y.toDouble()) else Native.vpZoom(factor, -1.0, -1.0)
+        requestRender()
+    }
+
+    /** a wheel event that does reach the view (outside Compose); the button press / release notices are taken so that
+     *  Android does not turn an unused right click into Back */
+    override fun onGenericMotionEvent(e: MotionEvent): Boolean {
+        if (e.isFromSource(InputDevice.SOURCE_CLASS_POINTER)) when (e.actionMasked) {
+            MotionEvent.ACTION_SCROLL -> { onWheel(e.getAxisValue(MotionEvent.AXIS_VSCROLL), e.x, e.y); return true }
+            MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> return true
+        }
+        return super.onGenericMotionEvent(e)
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (isMouse(e) && (mouseButton != 0 || e.actionMasked == MotionEvent.ACTION_DOWN) && onMouseButton(e)) return true
         val navAction = when (e.actionMasked) { MotionEvent.ACTION_DOWN -> 0; MotionEvent.ACTION_MOVE -> 1; MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> 2; else -> -1 }
         val wasNavigating = navigating
         if (navAction == 0) navigating = Native.vpNavTouch(e.x, e.y, 0)
@@ -120,6 +194,10 @@ class GLView(ctx: Context, private val listener: Listener) : GLSurfaceView(ctx) 
             }
             requestRender()
             return true
+        }
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+            mouseLeft = isMouse(e)
+            gestures.setIsLongpressEnabled(!mouseLeft)   // a held mouse button is not a long press
         }
         scale.onTouchEvent(e)
         if (e.pointerCount == 1 && !multi) gestures.onTouchEvent(e)
@@ -146,7 +224,10 @@ class GLView(ctx: Context, private val listener: Listener) : GLSurfaceView(ctx) 
                         orbiting = !dragging
                     }
                     if (dragging) Native.vpDragMove(e.x.toDouble(), e.y.toDouble())
-                    else if (orbiting) Native.vpOrbit((e.x - lastX).toDouble(), (e.y - lastY).toDouble())
+                    else if (orbiting) when (if (mouseLeft) listener.mouse().left else 2) {
+                        1 -> Native.vpPan((e.x - lastX).toDouble(), (e.y - lastY).toDouble())
+                        2 -> Native.vpOrbit((e.x - lastX).toDouble(), (e.y - lastY).toDouble())
+                    }
                     lastX = e.x; lastY = e.y
                     requestRender()
                 }

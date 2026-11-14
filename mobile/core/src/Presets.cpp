@@ -50,6 +50,10 @@ static json preset_json(const PresetCollection &presets, const Preset &p)
     if (presets.type() == Preset::TYPE_FILAMENT) {
         if (auto *t = p.config.option<ConfigOptionStrings>("filament_type"); t && !t->values.empty()) j["filament_type"] = t->values.front();
         if (auto *c = p.config.option<ConfigOptionStrings>("filament_colour"); c && !c->values.empty()) j["color"] = c->values.front();
+        // PresetComboBox::get_bmp: the combos show each filament's "Default color" (the edited one for the selected preset)
+        const Preset &shown = &presets.get_selected_preset() == &p ? presets.get_edited_preset() : p;
+        if (auto *c = shown.config.option<ConfigOptionStrings>("default_filament_colour"); c && !c->values.empty() && !c->values.front().empty())
+            j["default_color"] = c->values.front();
         if (auto *v = p.config.option<ConfigOptionStrings>("filament_vendor"); v && !v->values.empty()) j["filament_vendor"] = v->values.front();
     }
     if (presets.type() == Preset::TYPE_PRINTER)

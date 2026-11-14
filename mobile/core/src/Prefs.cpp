@@ -26,10 +26,10 @@ namespace {
 
 #include "slic3r/GUI/Preferences.inc"
 
-// desktop-only rows
-const std::set<std::string> hidden_keys = {"single_instance", "show_splash_screen", "window_buttons_on_left", "left_mouse_drag_action",
-                                           "middle_mouse_drag_action", "right_mouse_drag_action", "camera_navigation_style",
-                                           "reverse_mouse_wheel_zoom", "zoom_to_mouse", "enable_speed_dial", "speed_dial_recent_count",
+// desktop-only rows (the mouse rows stay: a mouse works in the 3D view, e.g. Samsung DeX, issue #9; the touchpad
+// navigation style does not apply)
+const std::set<std::string> hidden_keys = {"single_instance", "show_splash_screen", "window_buttons_on_left", "camera_navigation_style",
+                                           "enable_speed_dial", "speed_dial_recent_count",
                                            "opengl_antialiasing_samples", "opengl_fxaa_enabled", "opengl_fps_cap", "opengl_show_render_timings",
                                            "use_encrypted_token_file", "enable_multi_machine"};
 const std::set<std::string> hidden_vars = {"item_downloads"};

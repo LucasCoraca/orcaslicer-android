@@ -44,6 +44,8 @@ class MainActivity : ComponentActivity() {
         val app = (application as? OrcaApp)?.state ?: return super.dispatchKeyEvent(event)
         if (event.keyCode == android.view.KeyEvent.KEYCODE_SHIFT_LEFT || event.keyCode == android.view.KeyEvent.KEYCODE_SHIFT_RIGHT)
             org.orcaport.mobile.engine.Native.vpShift(event.action == android.view.KeyEvent.ACTION_DOWN)
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_CTRL_LEFT || event.keyCode == android.view.KeyEvent.KEYCODE_CTRL_RIGHT)
+            app.ctrlHeld = event.action == android.view.KeyEvent.ACTION_DOWN
         val typing = (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).isAcceptingText
         if (!typing) return app.onShortcutKey(event) || super.dispatchKeyEvent(event)
         if (app.onKeyBeforeFocus(event)) return true

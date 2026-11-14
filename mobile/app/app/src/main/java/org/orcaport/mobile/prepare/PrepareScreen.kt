@@ -95,10 +95,12 @@ private fun Canvas(app: AppState, modifier: Modifier, preview: Boolean, collapse
     }
     // the GL view and its listener outlive a switch between Prepare and Preview: they read the current tab
     val previewNow by androidx.compose.runtime.rememberUpdatedState(preview)
+    var glView by remember { mutableStateOf<GLView?>(null) }
     Box(modifier.clipToBounds().background(desk().panel)) {   // the canvas's labels (plate numbers, object names) stay inside it
         ghost?.let { g -> ImexGhostPopup(app, g) { ghost = null } }
         AndroidView(factory = { c ->
             GLView(c, object : GLView.Listener {
+                override fun mouse() = app.mouse
                 override fun onPick(hit: JSONObject, add: Boolean) {
                     if (previewNow) return
                     // a painting gizmo: a tap on the object paints (a dab of the brush, or a fill)
@@ -190,8 +192,20 @@ private fun Canvas(app: AppState, modifier: Modifier, preview: Boolean, collapse
                     }
                 }
                 override fun onFrame() { runCatching { app.overlay = JSONObject(Native.vpOverlay()) } }
-            }).also { v -> app.redraw = { v.requestRender() }; v.post { Native.vpZoomTo("plate"); v.requestRender() } }
-        }, modifier = Modifier.fillMaxSize().onGloballyPositioned { app.glOrigin = it.positionInWindow(); app.glSize = it.size })
+            }).also { v -> glView = v; app.redraw = { v.requestRender() }; v.post { Native.vpZoomTo("plate"); v.requestRender() } }
+        }, modifier = Modifier.fillMaxSize().onGloballyPositioned { app.glOrigin = it.positionInWindow(); app.glSize = it.size }
+            // the mouse wheel: Compose turns it into a Scroll pointer event that never reaches the embedded view
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        if (e.type != androidx.compose.ui.input.pointer.PointerEventType.Scroll) continue
+                        val ch = e.changes.firstOrNull() ?: continue
+                        glView?.onWheel(-ch.scrollDelta.y, ch.position.x, ch.position.y)
+                        ch.consume()
+                    }
+                }
+            })
 
         PlateLabels(app)
         if (!preview) ObjectLabels(app)

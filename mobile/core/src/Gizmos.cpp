@@ -27,6 +27,7 @@ static const ColorRGBA AXES_HOVER_COLOR[3] = {
 static const ColorRGBA DEFAULT_DRAG_COLOR = {1.0f, 1.0f, 1.0f, 1.0f};
 static const ColorRGBA GRABBER_UNIFORM_COL = {0, 1.0, 1.0, 1.0f};
 static const ColorRGBA GRABBER_UNIFORM_HOVER_COL = {0, 0.7, 0.7, 1.0f};
+static const ColorRGBA CONSTRAINED_COLOR = {0.5f, 0.5f, 0.5f, 1.0f};   // GLGizmoBase::CONSTRAINED_COLOR
 static const ColorRGBA FLATTEN_COLOR = {0.96f, 0.93f, 0.93f, 0.5f};
 static const ColorRGBA FLATTEN_HOVER_COLOR = {1.0f, 1.0f, 1.0f, 0.75f};
 
@@ -38,6 +39,32 @@ static const double ROTATE_SCALE_LONG_TOOTH = 0.1;
 static const unsigned ROTATE_SNAP_REGIONS = 8;
 // wxGetKeyState(WXK_SHIFT): a hardware keyboard's Shift, held while dragging (the app reports it, Jni vpShift)
 std::atomic<bool> shift_down{false};
+// wxGetKeyState(WXK_CONTROL) for the scale gizmo ("Single sided scaling"): a hardware keyboard's Ctrl, or the panel's
+// check box, since a touch screen has no Ctrl (the app reports either, Jni vpSingleSided)
+std::atomic<bool> single_sided_scale{false};
+// GLGizmoScale3D::constraint_id: the grabber that stays in place while one is dragged with Ctrl
+static int scale_constraint_id(int grabber)
+{
+    static const int id_map[10] = {1, 0, 3, 2, 5, 4, 8, 9, 6, 7};
+    return 0 <= grabber && grabber < 10 ? id_map[grabber] : -1;
+}
+// GLGizmoScale3D::update_grabbers_data: the grabbers on the box (4 = bottom centre, 5 = top, 6..9 = bottom corners)
+static Vec3d scale_grabber_pos(const BoundingBoxf3 &b, int i)
+{
+    const Vec3d c = b.center(), h = b.size() * 0.5;
+    switch (i) {
+    case 0: return c + Vec3d(-h.x(), 0, -h.z());
+    case 1: return c + Vec3d(h.x(), 0, -h.z());
+    case 2: return c + Vec3d(0, -h.y(), -h.z());
+    case 3: return c + Vec3d(0, h.y(), -h.z());
+    case 4: return c + Vec3d(0, 0, -h.z());
+    case 5: return c + Vec3d(0, 0, h.z());
+    case 6: return c + Vec3d(-h.x(), -h.y(), -h.z());
+    case 7: return c + Vec3d(h.x(), -h.y(), -h.z());
+    case 8: return c + Vec3d(h.x(), h.y(), -h.z());
+    default: return c + Vec3d(-h.x(), h.y(), -h.z());
+    }
+}
 static const double ROTATE_GRABBER_OFFSET = 0.15;
 static const unsigned ROTATE_ANGLE_RESOLUTION = 64;
 
@@ -150,6 +177,12 @@ Transform3d Gizmos::transform_locked() const
         else if (d.grabber < 6) s.z() = d.value;
         else s = Vec3d::Constant(d.value);
         Vec3d pivot(d.start.center.x(), d.start.center.y(), d.start.box.min.z());
+        if (d.single_sided) {
+            // do_scale_along_axis / do_scale_uniform with Ctrl: the opposite grabber stays where it is; a corner
+            // grabber then scales X and Y only
+            pivot = scale_grabber_pos(d.start.box, scale_constraint_id(d.grabber));
+            if (d.grabber >= 6) s.z() = 1;
+        }
         return Geometry::translation_transform(pivot) * Geometry::scale_transform(s) * Geometry::translation_transform(-pivot);
     }
     return Transform3d::Identity();
@@ -416,16 +449,17 @@ void Gizmos::render(const std::vector<RenderVolume> &vols, unsigned revision, co
     } else if (m_active == "scale") {
         // GLGizmoScale3D::update_grabbers_data / on_render: the bottom rectangle, axis and corner grabbers
         BoundingBoxf3 b = box.box.transformed(live);
-        Vec3d c = b.center(), h = b.size() * 0.5;
-        Vec3d pts[10] = {c + Vec3d(-h.x(), 0, -h.z()), c + Vec3d(h.x(), 0, -h.z()), c + Vec3d(0, -h.y(), -h.z()), c + Vec3d(0, h.y(), -h.z()),
-                         c + Vec3d(0, 0, -h.z()), c + Vec3d(0, 0, h.z()),
-                         c + Vec3d(-h.x(), -h.y(), -h.z()), c + Vec3d(h.x(), -h.y(), -h.z()), c + Vec3d(h.x(), h.y(), -h.z()), c + Vec3d(-h.x(), h.y(), -h.z())};
+        Vec3d pts[10];
+        for (int i = 0; i < 10; ++i) pts[i] = scale_grabber_pos(b, i);
+        // on_render: with Ctrl the grabber that stays in place is grey
+        const int constrained = dragging && m_drag.single_sided ? scale_constraint_id(m_drag.grabber) : -1;
         dr.lines({pts[6], pts[7], pts[7], pts[8]}, AXES_COLOR[1]);
         dr.lines({pts[8], pts[9], pts[9], pts[6]}, AXES_COLOR[0]);
         for (int i = 0; i < 10; ++i) {
             if (i == 4) continue;   // BBS: the bottom Z grabber is disabled
             bool hover = dragging && m_drag.grabber == i;
             ColorRGBA col = i < 6 ? (hover ? AXES_HOVER_COLOR[i / 2] : AXES_COLOR[i / 2]) : (hover ? GRABBER_UNIFORM_HOVER_COL : GRABBER_UNIFORM_COL);
+            if (i == constrained) col = CONSTRAINED_COLOR;
             dr.mesh(cube_mesh(), Geometry::translation_transform(pts[i]) * Geometry::scale_transform(grabber), col);
         }
     }
@@ -583,6 +617,7 @@ bool Gizmos::drag_start(const std::vector<RenderVolume> &vols, unsigned revision
     } else if (m_active == "scale") {
         best.value = 1;
         best.plane_normal = Vec3d::UnitZ();
+        best.single_sided = single_sided_scale;   // on_start_dragging: m_starting.ctrl_down
     } else
         best.value = 0;
     m_drag = best;
@@ -684,8 +719,9 @@ void Gizmos::drag_move(const Camera &cam, double px, double py)
         if (std::abs(theta - 2 * PI) < 1e-9) theta = 0;
         dg.value = theta;
     } else if (m_active == "scale") {
-        // GLGizmoScale3D::calc_ratio
+        // GLGizmoScale3D::calc_ratio (with Ctrl an axis grabber is measured from the one opposite)
         Vec3d pivot(dg.start.center.x(), dg.start.center.y(), dg.start.box.min.z());
+        if (dg.single_sided && dg.grabber < 6) pivot = scale_grabber_pos(dg.start.box, scale_constraint_id(dg.grabber));
         Vec3d starting_vec = dg.start_pos - pivot;
         double len0 = starting_vec.norm();
         if (len0 <= 0) return;

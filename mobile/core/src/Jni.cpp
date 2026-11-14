@@ -143,6 +143,8 @@ VP() jstring JNICALL Java_org_orcaport_mobile_engine_Native_vpOverlay(JNIEnv *en
 VP() void JNICALL Java_org_orcaport_mobile_engine_Native_vpUiScale(JNIEnv *, jclass, jfloat s) { orca::Gizmos::get().set_ui_scale(s); }
 namespace orca { extern std::atomic<bool> shift_down; }
 VP() void JNICALL Java_org_orcaport_mobile_engine_Native_vpShift(JNIEnv *, jclass, jboolean down) { orca::shift_down = down; }
+namespace orca { extern std::atomic<bool> single_sided_scale; }
+VP() void JNICALL Java_org_orcaport_mobile_engine_Native_vpSingleSided(JNIEnv *, jclass, jboolean on) { orca::single_sided_scale = on; }
 VP() jboolean JNICALL Java_org_orcaport_mobile_engine_Native_vpComTap(JNIEnv *, jclass, jdouble x, jdouble y) { return Viewport::get().center_of_mass_tap(x, y); }
 VP() jboolean JNICALL Java_org_orcaport_mobile_engine_Native_vpNavTouch(JNIEnv *, jclass, jfloat x, jfloat y, jint action) { return Viewport::get().navigator_touch(x, y, action); }
 VP() jboolean JNICALL Java_org_orcaport_mobile_engine_Native_vpPaintTap(JNIEnv *, jclass, jdouble x, jdouble y) { return Viewport::get().paint_tap(x, y); }

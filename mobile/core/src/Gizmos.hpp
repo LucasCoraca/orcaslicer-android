@@ -122,6 +122,7 @@ private:
         double        start_angle{0};
         double        value{0};               // displacement, angle or ratio
         double        inv_zoom{1};
+        bool          single_sided{false};    // scale with Ctrl (GLGizmoScale3D m_starting.ctrl_down)
         Slic3r::Transform3d cut_rotation{Slic3r::Transform3d::Identity()};
     };
 

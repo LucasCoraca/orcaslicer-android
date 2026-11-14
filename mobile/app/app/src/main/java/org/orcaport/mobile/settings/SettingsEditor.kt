@@ -328,6 +328,7 @@ fun PresetPicker(list: List<JSONObject>, selected: String, onDismiss: () -> Unit
             Column {
                 Box(Modifier.padding(10.dp)) { DeskInput(filter, true, false, Modifier.fillMaxWidth()) { filter = it } }
                 val shown = list.filter { filter.isBlank() || it.optString("label").contains(filter, true) }
+                val anySwatch = shown.any { parseColor(it.optString("default_color")) != null }
                 val groups = shown.groupBy {
                     when {
                         it.optBoolean("project") -> "Project-inside presets"
@@ -344,9 +345,12 @@ fun PresetPicker(list: List<JSONObject>, selected: String, onDismiss: () -> Unit
                             val name = p.optString("name")
                             Row(Modifier.fillMaxWidth().background(if (name == selected) c.selection else Color.Transparent)
                                 .clickable { onSelect(name) }.padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-                                p.optString("color").takeIf { it.isNotEmpty() }?.let { col ->
-                                    parseColor(col)?.let { Box(Modifier.size(16.dp).background(it, RoundedCornerShape(3.dp)).border(1.dp, c.border, RoundedCornerShape(3.dp))); Spacer(Modifier.width(8.dp)) }
-                                }
+                                // PresetComboBox::get_bmp: a filament's "Default color" (none when it has no default colour; the
+                                // names stay aligned when other rows have one)
+                                val swatch = p.optString("default_color").takeIf { it.isNotEmpty() }?.let { parseColor(it) }
+                                if (swatch != null) Box(Modifier.size(16.dp).background(swatch, RoundedCornerShape(3.dp)).border(1.dp, c.border, RoundedCornerShape(3.dp)))
+                                else if (anySwatch) Spacer(Modifier.width(16.dp))
+                                if (swatch != null || anySwatch) Spacer(Modifier.width(8.dp))
                                 Text(p.optString("label"), Modifier.weight(1f), style = deskText(14, color = if (!p.optBoolean("compatible", true)) OrcaColors.error else c.text))
                             }
                         }

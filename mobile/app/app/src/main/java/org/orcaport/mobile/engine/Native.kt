@@ -33,6 +33,8 @@ object Native {
     @JvmStatic external fun vpUiScale(scale: Float)
     /** a hardware keyboard's Shift is held (the gizmos' snapping, wxGetKeyState(WXK_SHIFT)) */
     @JvmStatic external fun vpShift(down: Boolean)
+    /** the scale gizmo keeps the grabber opposite the dragged one in place (GLGizmoScale3D with Ctrl held) */
+    @JvmStatic external fun vpSingleSided(on: Boolean)
     /** a tap with a painting gizmo: one dab of the brush or one fill; false when not on the object */
     @JvmStatic external fun vpComTap(x: Double, y: Double): Boolean
     @JvmStatic external fun vpNavTouch(x: Float, y: Float, action: Int): Boolean
