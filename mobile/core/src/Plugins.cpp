@@ -14,6 +14,10 @@
 #include "slic3r/GUI/GUI.hpp"
 #include "slic3r/plugin/host/PluginHostUi.hpp"
 #include "slic3r/plugin/host/PluginPages.hpp"
+#include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/Utils/NetworkAgent.hpp"
+#include "slic3r/Utils/OrcaCloudServiceAgent.hpp"
+#include <thread>
 
 using namespace Slic3r;
 
@@ -79,6 +83,35 @@ static void init_plugin_gui_wiring()
     Slic3r::GUI::bump_texture_library_generation();
 }
 
+// the cloud plugins follow the OrcaCloud account (Cloud.cpp's GUI_App bodies call these)
+void plugins_cloud_user(const std::string &user_id) { PluginManager::instance().set_cloud_user(user_id); }
+// GUI_App::request_user_logout
+void plugins_cloud_logout()
+{
+    PluginManager &m = PluginManager::instance();
+    m.unload_cloud_plugins();
+    m.clear_cloud_plugin_metadata();
+    Core::call_after([] { refresh_open_plugins_dialog(); });
+}
+// GUI_App::on_user_login_handle: blocking, like upstream (behind the "Syncing your account" progress)
+void plugins_cloud_fetch()
+{
+    std::vector<std::string> not_found, unauthorized;
+    PluginManager::instance().fetch_plugins_from_cloud(&not_found, &unauthorized);
+    Core::call_after([] { refresh_open_plugins_dialog(); });
+}
+// at startup the fetch runs off the engine thread (the dialog's Refresh does the same on its worker)
+static void plugins_cloud_fetch_async()
+{
+    std::thread([] {
+        try {
+            plugins_cloud_fetch();
+        } catch (const std::exception &e) {
+            BOOST_LOG_TRIVIAL(error) << "plugins: cloud fetch: " << e.what();
+        }
+    }).detach();
+}
+
 // GUI_App::on_init_inner: "Loading Plugins"
 void plugins_init()
 {
@@ -100,6 +133,14 @@ void plugins_init()
             if (!preset_folder.empty()) plugin_mgr.set_cloud_user(preset_folder);
             plugin_mgr.discover_plugins(false, true);
             init_plugin_gui_wiring();
+            // GUI_App::on_init_inner: the cloud plugins of the signed-in account (the Plugins dialog's Refresh
+            // fetches them through this agent)
+            NetworkAgent *agent = Slic3r::GUI::wxGetApp().getAgent();
+            if (agent) plugin_mgr.set_cloud_agent(std::dynamic_pointer_cast<OrcaCloudServiceAgent>(agent->get_cloud_agent()));
+            if (agent && agent->is_user_login()) {
+                plugin_mgr.set_cloud_user(agent->get_user_id());
+                plugins_cloud_fetch_async();
+            }
             for (const std::string &plugin_key : plugin_mgr.get_enabled_plugin_keys()) {
                 if (!plugin_mgr.is_plugin_loaded(plugin_key)) {
                     plugin_mgr.load_plugin(plugin_key, false);

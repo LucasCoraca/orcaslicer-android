@@ -49,6 +49,9 @@
 
 namespace orca {
 std::string preferred_language(const std::string &device);
+void plugins_cloud_user(const std::string &user_id);
+void plugins_cloud_logout();
+void plugins_cloud_fetch();
 }
 
 namespace Slic3r { namespace GUI {
@@ -132,13 +135,14 @@ struct CloudMainFrame
 struct CloudTab { void reload_config() {} void update_changed_ui() {} };
 struct ImGuiState { bool display_initialized() const { return true; } };
 
+// Slic3r::PluginManager (Plugins.cpp, which includes the Python headers): the cloud plugins follow the account
 struct PluginManager
 {
     static PluginManager &instance() { static PluginManager m; return m; }
-    void unload_cloud_plugins() {}
-    void clear_cloud_plugin_metadata() {}
-    void set_cloud_user(const std::string &) {}
-    void fetch_plugins_from_cloud(std::vector<std::string> * = nullptr, std::vector<std::string> * = nullptr) {}
+    void unload_cloud_plugins() { orca::plugins_cloud_logout(); }
+    void clear_cloud_plugin_metadata() {}   // part of plugins_cloud_logout
+    void set_cloud_user(const std::string &user_id) { orca::plugins_cloud_user(user_id); }
+    void fetch_plugins_from_cloud() { orca::plugins_cloud_fetch(); }
 };
 // WebViewPanel: the home page gets its scripts through run_script; its OrcaCloud pane is the app's
 bool g_cloud_pane_open = false;
@@ -397,6 +401,8 @@ static void on_user_login_handle(int online_login, const std::string &provider)
         a.maybe_migrate_user_presets_on_login();
         a.remove_user_presets();
         a.enable_user_preset_folder(true);
+        dlg->Update(40, _L("Fetching plugins…"));
+        cloud::PluginManager::instance().fetch_plugins_from_cloud();
         dlg->Update(70, _L("Loading user presets…"));
         a.preset_bundle->load_user_presets(g_agent->get_user_id(provider), ForwardCompatibilitySubstitutionRule::Enable);
         orca::Core::get().invalidate_full_config();
