@@ -134,6 +134,13 @@ The APK lands in `mobile/app/app/build/outputs/apk/arm64/release/`. Without `BUI
 with the package id `org.orcaport.slicer.dev`, which installs next to a release. `x86_64` builds the same way, for
 emulators.
 
+## Contributing
+
+This port **does not accept code contributions**. Because of supply-chain attacks, pull requests are closed unreviewed,
+and every file or piece of code shared in a pull request or issue is treated as a possible attack vector. Ideas, bug
+reports and translation wording are welcome as issues. If one is taken up, it is implemented here independently and you
+are credited. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 [GNU AGPL-3.0](LICENSE), the same as OrcaSlicer. This port stands on the work of OrcaSlicer, Bambu Studio, PrusaSlicer and Slic3r.
