@@ -5,8 +5,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val appVersion = "0.2.9"
-val baseVersionCode = 38   // 0.1.x (the wxWidgets port) used 1..3, 0.2.0 21/22, 0.2.1 23/24, 0.2.2 25/26, 0.2.3 27/28, 0.2.4 29/30, 0.2.5 31/32, 0.2.6 33/34, 0.2.7 35/36, 0.2.8 37/38; one code per ABI below
+val appVersion = "0.2.10"
+val baseVersionCode = 40   // 0.1.x (the wxWidgets port) used 1..3, 0.2.0 21/22, 0.2.1 23/24, 0.2.2 25/26, 0.2.3 27/28, 0.2.4 29/30, 0.2.5 31/32, 0.2.6 33/34, 0.2.7 35/36, 0.2.8 37/38, 0.2.9 39/40; one code per ABI below
 val staging = file("build/staging")
 // The Orca release key (env.sh ORCA_KEYSTORE), so the app updates the earlier releases in place.
 val keystore = file(System.getenv("ORCA_KEYSTORE") ?: "../../../hosttools/debug.keystore")
