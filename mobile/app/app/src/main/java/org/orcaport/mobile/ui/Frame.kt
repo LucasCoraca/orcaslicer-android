@@ -2,6 +2,8 @@ package org.orcaport.mobile.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -69,19 +71,22 @@ private val TAB_ICONS = mapOf(MainTab.Home to "tab_home_active", MainTab.Prepare
 @Composable
 fun TabBar(app: AppState, compact: Boolean, onSlice: (all: Boolean) -> Unit, onExport: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().background(FrameColors.tabbar).height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-        for (tab in listOf(MainTab.Home, MainTab.Prepare, MainTab.Preview, MainTab.Device, MainTab.Project)) {
-            val sel = app.tab == tab
-            Row(Modifier.fillMaxHeight().background(if (sel) FrameColors.tabSelected else Color.Transparent)
-                .clickable { app.tab = tab }.padding(horizontal = if (tab == MainTab.Home || compact) 14.dp else 28.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                OrcaIcon(TAB_ICONS[tab]!!, 22.dp, darkVariant = false)
-                if (tab != MainTab.Home && !compact)
-                    Text(tr(tab.label), Modifier.padding(start = 10.dp), color = FrameColors.text, fontSize = 14.sp,
-                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
+        // the tabs scroll when the plugins' pages make them too wide: the slice and print buttons always keep their room
+        Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            for (tab in listOf(MainTab.Home, MainTab.Prepare, MainTab.Preview, MainTab.Device, MainTab.Project)) {
+                val sel = app.tab == tab
+                Row(Modifier.fillMaxHeight().background(if (sel) FrameColors.tabSelected else Color.Transparent)
+                    .clickable { app.tab = tab }.padding(horizontal = if (tab == MainTab.Home || compact) 14.dp else 28.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    OrcaIcon(TAB_ICONS[tab]!!, 22.dp, darkVariant = false)
+                    if (tab != MainTab.Home && !compact)
+                        Text(tr(tab.label), Modifier.padding(start = 10.dp), color = FrameColors.text, fontSize = 14.sp,
+                            fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
+                }
             }
+            PluginPageTabs(app, compact)
         }
-        PluginPageTabs(app, compact)
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(10.dp))
         SplitButton(tr(if (app.sliceAll) "Slice all" else "Slice plate"), enabled = !app.slicing && app.hasObjects,
             menu = listOf(tr("Slice all") to { app.sliceAll = true; onSlice(true) }, tr("Slice plate") to { app.sliceAll = false; onSlice(false) })) { onSlice(app.sliceAll) }
         Spacer(Modifier.width(10.dp))
