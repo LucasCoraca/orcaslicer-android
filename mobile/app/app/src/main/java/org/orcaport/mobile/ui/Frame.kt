@@ -67,27 +67,16 @@ private fun TopbarTool(icon: String, label: String?, enabled: Boolean = true, on
 private val TAB_ICONS = mapOf(MainTab.Home to "tab_home_active", MainTab.Prepare to "tab_3d_active", MainTab.Preview to "tab_preview_active",
     MainTab.Device to "tab_monitor_active", MainTab.Project to "tab_auxiliary_active", MainTab.Calibration to "tab_calibration_active")
 
-/** MainFrame's tab bar: Home (icon only), Prepare, Preview, Device, Project, then the slice and print / export buttons. */
+/**
+ * MainFrame's tab bar: Home (icon only), Prepare, Preview, Device, Project, then the slice and print / export buttons.
+ * On a phone held upright the buttons don't fit next to the tabs: they get a row of their own under the tabs.
+ */
 @Composable
 fun TabBar(app: AppState, compact: Boolean, onSlice: (all: Boolean) -> Unit, onExport: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth().background(FrameColors.tabbar).height(48.dp), verticalAlignment = Alignment.CenterVertically) {
-        // the tabs scroll when the plugins' pages make them too wide: the slice and print buttons always keep their room
-        Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-            for (tab in listOf(MainTab.Home, MainTab.Prepare, MainTab.Preview, MainTab.Device, MainTab.Project)) {
-                val sel = app.tab == tab
-                Row(Modifier.fillMaxHeight().background(if (sel) FrameColors.tabSelected else Color.Transparent)
-                    .clickable { app.tab = tab }.padding(horizontal = if (tab == MainTab.Home || compact) 14.dp else 28.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    OrcaIcon(TAB_ICONS[tab]!!, 22.dp, darkVariant = false)
-                    if (tab != MainTab.Home && !compact)
-                        Text(tr(tab.label), Modifier.padding(start = 10.dp), color = FrameColors.text, fontSize = 14.sp,
-                            fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
-                }
-            }
-            PluginPageTabs(app, compact)
-        }
-        Spacer(Modifier.width(10.dp))
-        SplitButton(tr(if (app.sliceAll) "Slice all" else "Slice plate"), enabled = !app.slicing && app.hasObjects,
+    @Composable
+    fun RowScope.Buttons(narrow: Boolean) {
+        val bm = if (narrow) Modifier.weight(1f) else Modifier
+        SplitButton(tr(if (app.sliceAll) "Slice all" else "Slice plate"), enabled = !app.slicing && app.hasObjects, modifier = bm, fill = narrow,
             menu = listOf(tr("Slice all") to { app.sliceAll = true; onSlice(true) }, tr("Slice plate") to { app.sliceAll = false; onSlice(false) })) { onSlice(app.sliceAll) }
         Spacer(Modifier.width(10.dp))
         // MainFrame::available_print_actions (device.state): Print (send to the print host), the sliced file, the G-code
@@ -97,25 +86,59 @@ fun TabBar(app: AppState, compact: Boolean, onSlice: (all: Boolean) -> Unit, onE
             a.optString("label") to when (a.optString("key")) { "send_gcode" -> "send"; "export_sliced_file" -> "plate_3mf"; else -> "gcode" }
         } else listOf(tr("Export G-code file") to "gcode")
         val current = menu.firstOrNull { it.first == app.exportAction } ?: menu.first()
-        SplitButton(current.first, enabled = app.canExport,
+        SplitButton(current.first, enabled = app.canExport, modifier = bm, fill = narrow,
             menu = menu.map { (label, what) -> label to { app.exportAction = label; onExport(what) } }) { onExport(current.second) }
-        Spacer(Modifier.width(12.dp))
     }
+    BoxWithConstraints(Modifier.fillMaxWidth().background(FrameColors.tabbar)) {
+        val narrow = compact && maxWidth < 600.dp
+        if (narrow) Column(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().height(48.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                Tabs(app, compact)
+            }
+            Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Buttons(narrow = true)
+            }
+        } else Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
+            // the tabs scroll when the plugins' pages make them too wide: the slice and print buttons always keep their room
+            Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                Tabs(app, compact)
+            }
+            Spacer(Modifier.width(10.dp))
+            Buttons(narrow = false)
+            Spacer(Modifier.width(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun Tabs(app: AppState, compact: Boolean) {
+    for (tab in listOf(MainTab.Home, MainTab.Prepare, MainTab.Preview, MainTab.Device, MainTab.Project)) {
+        val sel = app.tab == tab
+        Row(Modifier.fillMaxHeight().background(if (sel) FrameColors.tabSelected else Color.Transparent)
+            .clickable { app.tab = tab }.padding(horizontal = if (tab == MainTab.Home || compact) 14.dp else 28.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            OrcaIcon(TAB_ICONS[tab]!!, 22.dp, darkVariant = false)
+            if (tab != MainTab.Home && !compact)
+                Text(tr(tab.label), Modifier.padding(start = 10.dp), color = FrameColors.text, fontSize = 14.sp,
+                    fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
+        }
+    }
+    PluginPageTabs(app, compact)
 }
 
 /** SideButton + its dropdown half (MainFrame m_slice_btn / m_slice_option_btn). */
 @Composable
-fun SplitButton(label: String, enabled: Boolean, menu: List<Pair<String, () -> Unit>>, onClick: () -> Unit) {
+fun SplitButton(label: String, enabled: Boolean, menu: List<Pair<String, () -> Unit>>, modifier: Modifier = Modifier, fill: Boolean = false, onClick: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     val bg = if (enabled) FrameColors.sliceNormal else FrameColors.sliceDisabled
-    Box {
-        Row(Modifier.height(32.dp).clip(RoundedCornerShape(16.dp)).background(bg), verticalAlignment = Alignment.CenterVertically) {
+    Box(modifier) {
+        Row((if (fill) Modifier.fillMaxWidth() else Modifier).height(32.dp).clip(RoundedCornerShape(16.dp)).background(bg), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.fillMaxHeight().clickable { open = true }.padding(horizontal = 8.dp), Alignment.Center) {
                 OrcaIcon("sidebutton_dropdown", 14.dp, darkVariant = false)
             }
             Box(Modifier.fillMaxHeight().width(1.dp).background(Color(0x55FFFFFF)))
-            Box(Modifier.fillMaxHeight().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 18.dp), Alignment.Center) {
-                Text(label, color = if (enabled) Color.White else Color(0xFFB8C2C4), fontSize = 14.sp)
+            Box(Modifier.weight(1f, fill = fill).fillMaxHeight().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 18.dp), Alignment.Center) {
+                Text(label, color = if (enabled) Color.White else Color(0xFFB8C2C4), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         DropdownMenu(open, { open = false }) {
