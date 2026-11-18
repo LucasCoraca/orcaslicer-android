@@ -18,7 +18,7 @@ for ABI in $ABIS; do
     if ! grep -q "ORCA_MOBILE_CORE:BOOL=ON" $B/CMakeCache.txt 2>/dev/null; then
       $R/configure-engine.sh $ABI -DORCA_MOBILE_CORE=ON
     fi
-    (cd $B && nice -n 19 ninja -j$JOBS orcacore python3_exe)
+    (cd $B && nice -n 19 ninja -j$JOBS orcacore python3_exe uv_exe)
   fi
   mkdir -p $STAGE/jni/$ABI
   TRIPLE=$([ $ABI = arm64-v8a ] && echo aarch64-linux-android || echo x86_64-linux-android)
@@ -27,6 +27,8 @@ for ABI in $ABIS; do
   cp $NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/$TRIPLE/libc++_shared.so $STAGE/jni/$ABI/
   # the plugin terminal's python (an executable named as a library: Android installs it runnable)
   $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-unneeded -o $STAGE/jni/$ABI/libpython3_exe.so $B/mobile-core/libpython3_exe.so
+  # the plugins' package installer (upstream's uv, tools/uv_shim.c), installed runnable the same way
+  $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-unneeded -o $STAGE/jni/$ABI/libuv_exe.so $B/mobile-core/libuv_exe.so
   # CPython for the plugin system: the interpreter and the libraries its modules use as native libraries, the
   # extension modules (lib-dynload) as an asset of the ABI's APK, unpacked next to the stdlib at the first start
   PY=$R/deps-android/$ABI/usr/local/libpython/lib
@@ -49,6 +51,8 @@ if [ -z "$SKIP_ASSETS" ]; then
   (cd $PYSTD && tar cf - --exclude=./test --exclude=./idlelib --exclude=./tkinter --exclude=./turtledemo --exclude=./ensurepip \
       --exclude='./config-3.14*' --exclude=./lib-dynload --exclude=__pycache__ .) | (cd $RES/python/lib/python3.14 && tar xf -)
   echo "the stdlib is in ../python3.14" > $RES/python/lib/python3.12/encodings/README
+  # pip, for the plugins' dependencies: the wheel CPython bundles for ensurepip, run by tools/uv/uv (uv_shim.c)
+  cp $PYSTD/ensurepip/_bundled/pip-*-py3-none-any.whl $RES/python/pip.whl
   python3 $R/android/app/make_resources_zip.py $RES $STAGE/assets/resources.zip
   python3 $M/tools/gen_settings_layout.py $ORCA $STAGE/assets/settings_layout.json $M/layout/layout_overrides.json
 fi

@@ -49,6 +49,10 @@ class Engine(private val ctx: Context) {
             val link = File(bin, "python3")
             link.delete()
             android.system.Os.symlink(File(ctx.applicationInfo.nativeLibraryDir, "libpython3_exe.so").path, link.path)
+            // the plugins' package installer (PythonInterpreter::bundled_uv_path: <resources>/tools/uv/uv)
+            val uv = File(File(resourcesDir, "tools/uv").apply { mkdirs() }, "uv")
+            uv.delete()
+            android.system.Os.symlink(File(ctx.applicationInfo.nativeLibraryDir, "libuv_exe.so").path, uv.path)
         }
         progress("Loading printer & filament profiles")
         val lang = Locale.getDefault().language

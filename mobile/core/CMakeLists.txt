@@ -767,3 +767,6 @@ set_target_properties(python3_exe PROPERTIES OUTPUT_NAME "libpython3_exe" SUFFIX
 target_include_directories(python3_exe SYSTEM PRIVATE ${_python_include})
 target_link_libraries(python3_exe PRIVATE "${_deps_prefix}/libpython/lib/libpython3.14.so")
 target_link_options(python3_exe PRIVATE "LINKER:-rpath,$ORIGIN")
+# the plugin system's package installer (tools/uv_shim.c): upstream's "uv pip install" run with the bundled pip
+add_executable(uv_exe tools/uv_shim.c)
+set_target_properties(uv_exe PROPERTIES OUTPUT_NAME "libuv_exe" SUFFIX ".so")
