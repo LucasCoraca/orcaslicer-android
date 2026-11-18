@@ -162,6 +162,7 @@ static void build_ca_bundle(const fs::path &out)
 void backup_init();
 void cloud_init();
 void plugins_init();
+void init_bed_type();
 std::string preferred_language(const std::string &device);
 
 json Core::init(const std::string &resources, const std::string &data, const std::string &language)
@@ -226,6 +227,7 @@ json Core::init(const std::string &resources, const std::string &data, const std
     static GUI::MainFrame mainframe;   // the app's main window, as upstream logic checks for it
     app.mainframe     = &mainframe;
     app.model_        = &model;
+    try { init_bed_type(); } catch (const std::exception &ex) { BOOST_LOG_TRIVIAL(error) << "bed type: " << ex.what(); }   // the Sidebar's plate type (Presets.cpp)
     invalidate_full_config();
     plater.set_config(&full_config());
     backup_init();

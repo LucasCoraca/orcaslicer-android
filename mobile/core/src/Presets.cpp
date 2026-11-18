@@ -85,6 +85,113 @@ bool ensure_belt_purge_tower();         // BeltPurge.cpp
 void filaments_auto_flush(int idx);
 void filaments_refresh_mixed();
 
+json presets_state();
+void presets_changed();
+
+// ---- Sidebar's plate type (combo_printer_bed): the global bed type of the project, per printer model ----
+
+// Sidebar::reset_bed_type_combox_choices: the bed types the printer model supports (all of them without a model)
+static std::vector<BedType> bed_type_choices()
+{
+    PresetBundle &bundle = *Core::get().preset_bundle;
+    const VendorProfile::PrinterModel *pm = PresetUtils::system_printer_model(bundle.printers.get_selected_preset());
+    if (!pm)
+        if (const Preset *parent = bundle.printers.get_selected_preset_parent()) pm = PresetUtils::system_printer_model(*parent);
+    const ConfigOptionDef *def = print_config_def.get("curr_bed_type");
+    std::vector<BedType> types;
+    int index = 0;
+    for (const std::string &item : def->enum_labels) {
+        ++index;
+        if (pm && std::find(pm->not_support_bed_types.begin(), pm->not_support_bed_types.end(), item) != pm->not_support_bed_types.end())
+            continue;
+        types.push_back(BedType(index));
+    }
+    return types;
+}
+
+static bool bed_type_selectable()
+{
+    PresetBundle &bundle = *Core::get().preset_bundle;
+    return bundle.is_bbl_vendor() || bundle.printers.get_edited_preset().config.opt_bool("support_multi_bed_types");
+}
+
+// Plater::priv::on_select_bed_type: the project's bed type, remembered for the printer
+static void set_bed_type(BedType bed_type)
+{
+    Core &core = Core::get();
+    core.preset_bundle->project_config.set_key_value("curr_bed_type", new ConfigOptionEnum<BedType>(bed_type));
+    core.app_config->set("curr_bed_type", std::to_string(int(bed_type)));
+    core.app_config->set_printer_setting(core.preset_bundle->printers.get_selected_preset_name(), "curr_bed_type",
+                                         std::to_string(int(bed_type)));
+}
+
+// Sidebar::set_bed_type_accord_combox: the type if the printer supports it, else its first one
+static void select_bed_type(BedType bed_type)
+{
+    const std::vector<BedType> types = bed_type_choices();
+    if (types.empty()) return;
+    set_bed_type(std::find(types.begin(), types.end(), bed_type) != types.end() ? bed_type : types.front());
+}
+
+// Sidebar::update_presets(TYPE_PRINTER): the printer's remembered plate type, else its default one
+void sync_bed_type_with_printer()
+{
+    Core &core = Core::get();
+    PresetBundle &bundle = *core.preset_bundle;
+    BedType bed_type = bundle.printers.get_edited_preset().get_default_bed_type(&bundle);
+    if (bed_type_selectable()) {
+        const std::string remembered = core.app_config->get_printer_setting(bundle.printers.get_selected_preset_name(), "curr_bed_type");
+        if (!remembered.empty()) {
+            const int v = atoi(remembered.c_str());
+            if (v > 0 && v < int(btCount)) bed_type = BedType(v);
+        }
+    }
+    select_bed_type(bed_type);
+}
+
+// the Sidebar's start (its constructor): the last plate type, then the printer's
+void init_bed_type()
+{
+    Core &core = Core::get();
+    int v = atoi(core.app_config->get("curr_bed_type").c_str());
+    if (v <= 0 || v >= int(btCount)) {
+        core.app_config->set("curr_bed_type", "1");
+        v = 1;
+    }
+    core.preset_bundle->project_config.set_key_value("curr_bed_type", new ConfigOptionEnum<BedType>(BedType(v)));
+    sync_bed_type_with_printer();
+}
+
+static json bed_type_state()
+{
+    const ConfigOptionDef *def = print_config_def.get("curr_bed_type");
+    const DynamicPrintConfig &proj = Core::get().preset_bundle->project_config;
+    const int cur = proj.has("curr_bed_type") ? int(proj.opt_enum<BedType>("curr_bed_type")) : 0;
+    json list = json::array();
+    for (BedType t : bed_type_choices())
+        list.push_back({{"value", int(t)}, {"label", translate(def->enum_labels[size_t(t) - 1])}});
+    return {{"types", list}, {"value", cur}, {"enabled", bed_type_selectable()}, {"label", translate("Plate Type")}};
+}
+
+static json bed_type_select(const json &a)
+{
+    const int v = a.value("value", 0);
+    if (v <= 0 || v >= int(btCount)) throw CommandError("bad bed type");
+    if (!bed_type_selectable()) throw CommandError("this printer has one plate type");
+    const DynamicPrintConfig &proj = Core::get().preset_bundle->project_config;
+    const bool changed = !proj.has("curr_bed_type") || proj.opt_enum<BedType>("curr_bed_type") != BedType(v);
+    set_bed_type(BedType(v));
+    // update_project_dirty_from_presets; the plates that follow the global type are sliced again
+    if (changed) {
+        Plater &p = Plater::get();
+        p.dirty = true;
+        for (auto &pl : p.plates)
+            if (!pl.config.has("curr_bed_type") || pl.config.opt_enum<BedType>("curr_bed_type") == btDefault) pl.slice_valid = false;
+    }
+    presets_changed();
+    return presets_state();
+}
+
 // What the plater sidebar shows: the selected printer / process and one filament per extruder slot.
 json presets_state()
 {
@@ -125,6 +232,7 @@ json presets_state()
     printer["variants"] = variants;
     const auto *nd = pp.config.option<ConfigOptionFloats>("nozzle_diameter");
     printer["nozzle_diameter"] = nd && !nd->values.empty() ? nd->values[0] : 0.4;
+    printer["bed_type"] = bed_type_state();
     return {{"printer", printer},
             {"print", sel(b.prints)},
             {"filament", sel(b.filaments)},
@@ -325,6 +433,8 @@ static json select_preset(const json &a)
         // Plater::priv::on_select_preset: another printer recalculates every flushing volume with "all"
         if (printer_tab && old_printer != preset_name && core.app_config->get("auto_calculate_flush") == "all") filaments_auto_flush(-1);
     }
+    // Sidebar::update_presets(TYPE_PRINTER): the new printer's plate type
+    if (!canceled && printer_tab) sync_bed_type_with_printer();
     presets_changed();
     // Plater::priv::update_objects_position_when_select_preset: re-clamp the prime towers to the new bed
     if (!canceled && printer_tab) set_default_wipe_tower_pos_all();
@@ -475,6 +585,7 @@ static Commands reg({
     {"presets.list", list_presets},
     {"presets.state", [](const json &) { return presets_state(); }},
     {"presets.select", select_preset},
+    {"presets.bed_type", bed_type_select},
     {"presets.validate_name", validate_name},
     {"presets.suggest_name", suggest_name},
     {"presets.save", save_preset},

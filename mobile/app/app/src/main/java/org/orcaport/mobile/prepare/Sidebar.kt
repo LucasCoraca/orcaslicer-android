@@ -119,6 +119,27 @@ private fun PrinterCard(app: AppState, p: JSONObject) {
             Text("%.1f".format(p.optDouble("nozzle_diameter", 0.4)), Modifier.width(36.dp), style = deskText(13))
             DeskCombo(p.optString("nozzle_volume_type", "Standard"), Modifier.weight(1f), height = 32.dp) { app.editing = "printer" }
         }
+        // Sidebar's plate type (combo_printer_bed): the project's bed type, enabled for printers with several plate types
+        val bed = p.optJSONObject("bed_type")
+        val types = bed?.optJSONArray("types")
+        if (bed != null && types != null && types.length() > 0) {
+            val cur = (0 until types.length()).map { types.getJSONObject(it) }.firstOrNull { it.optInt("value") == bed.optInt("value") }
+            var bopen by remember { mutableStateOf(false) }
+            Spacer(Modifier.height(6.dp))
+            Text(bed.optString("label"), style = deskText(12, color = c.textDim))
+            Box(Modifier.padding(top = 2.dp).fillMaxWidth()) {
+                DeskCombo(cur?.optString("label") ?: "-", Modifier.fillMaxWidth(), height = 32.dp, enabled = bed.optBoolean("enabled")) { bopen = true }
+                DropdownMenu(bopen, { bopen = false }) {
+                    for (i in 0 until types.length()) {
+                        val t = types.getJSONObject(i)
+                        DropdownMenuItem(text = { Text(t.optString("label"), style = deskText(14)) }, onClick = {
+                            bopen = false
+                            app.call("presets.bed_type", jobj("value" to t.optInt("value"))) { if (it is JSONObject) app.presets = it }
+                        })
+                    }
+                }
+            }
+        }
     }
     if (open) PresetPicker(list, p.optString("name"), { open = false }, listOf(
         tr("Select/Remove printers (system presets)") to { app.wizard = "models" },
