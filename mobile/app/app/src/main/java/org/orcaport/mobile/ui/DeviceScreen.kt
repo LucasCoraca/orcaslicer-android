@@ -47,6 +47,13 @@ fun DeviceScreen(app: AppState) {
 @Composable
 fun PrinterWebView(url: String, apikey: String, reload: Int = 0) {
     val reloaded = remember { intArrayOf(reload) }
+    // the page's <input type="file"> (a host's Upload / Import button): the system file picker, as wxWebView's browser shows one
+    val pending = remember { arrayOfNulls<android.webkit.ValueCallback<Array<android.net.Uri>>>(1) }
+    val chooser = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        pending[0]?.onReceiveValue(android.webkit.WebChromeClient.FileChooserParams.parseResult(r.resultCode, r.data))
+        pending[0] = null
+    }
     androidx.compose.ui.viewinterop.AndroidView(modifier = Modifier.fillMaxSize(), update = { v ->
         // F5 (MainFrame::load_printer_url): the page again
         if (reload != reloaded[0]) { reloaded[0] = reload; v.reload() }
@@ -56,6 +63,19 @@ fun PrinterWebView(url: String, apikey: String, reload: Int = 0) {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             var keySent = false
+            webChromeClient = object : android.webkit.WebChromeClient() {
+                override fun onShowFileChooser(view: android.webkit.WebView, callback: android.webkit.ValueCallback<Array<android.net.Uri>>,
+                                               params: FileChooserParams): Boolean {
+                    pending[0]?.onReceiveValue(null)
+                    pending[0] = callback
+                    val intent = params.createIntent().apply {
+                        // createIntent filters by the accept list's MIME types, which providers rarely give .gcode / .3mf files
+                        type = "*/*"
+                        if (params.mode == FileChooserParams.MODE_OPEN_MULTIPLE) putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    }
+                    return try { chooser.launch(intent); true } catch (e: Exception) { pending[0] = null; false }
+                }
+            }
             webViewClient = object : android.webkit.WebViewClient() {
                 override fun onPageFinished(view: android.webkit.WebView, u: String?) {
                     if (keySent || apikey.isEmpty() || u.isNullOrEmpty()) return
