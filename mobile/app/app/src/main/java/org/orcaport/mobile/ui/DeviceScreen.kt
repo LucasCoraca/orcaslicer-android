@@ -110,7 +110,11 @@ fun PrinterHostDialog(app: AppState, onClose: () -> Unit) {
     val buttons = st.optJSONObject("buttons") ?: JSONObject()
     fun btn(name: String) = buttons.optJSONObject(name) ?: JSONObject()
     val ok = btn("ok")
-    DeskDialog(st.optString("title"), onDismiss = { app.call("printhost.close") { if (it is JSONObject) app.presets = it }; onClose() },
+    // closing with changes saves them (pp::close): the Device tab follows like after OK
+    DeskDialog(st.optString("title"), onDismiss = {
+            app.call("printhost.close") { if (it is JSONObject) { app.presets = it; app.call("device.state") { d -> if (d is JSONObject) app.device = d } } }
+            onClose()
+        },
         ok = {
             if (!ok.optBoolean("enabled", true)) return@DeskDialog
             app.call("printhost.ok") { if (it is JSONObject) { app.presets = it; onClose(); app.call("device.state") { d -> if (d is JSONObject) app.device = d } } }

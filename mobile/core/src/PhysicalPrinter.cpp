@@ -183,6 +183,7 @@ struct PhysicalPrinterDialog
 #include "slic3r/GUI/PhysicalPrinterDialog.inc"
 
 std::unique_ptr<PhysicalPrinterDialog> g_dialog;
+bool                                   g_changed = false;   // a field or the name was edited since the dialog opened
 
 // PhysicalPrinterDialog's constructor and build_printhost_settings, without the widgets
 PhysicalPrinterDialog *open_dialog()
@@ -230,7 +231,8 @@ PhysicalPrinterDialog *open_dialog()
         choice->set_selection();
     }
     d->update();
-    g_dialog = std::move(d);
+    g_dialog  = std::move(d);
+    g_changed = false;
     return g_dialog.get();
 }
 
@@ -281,6 +283,7 @@ json set(const json &a)
 {
     PhysicalPrinterDialog &d   = dialog();
     const std::string      key = str_arg(a, "key");
+    g_changed = true;
     if (key == "name") {
         d.input.value = a.at("value").get<std::string>();
         d.update();
@@ -464,8 +467,15 @@ json ok(const json &)
     return Core::get().call("presets.save", {{"type", "printer"}, {"name", name}});
 }
 
-json close(const json &)
+// The dialog closed without OK (Back, or a tap outside it). The edits are already in the edited printer preset, so the
+// Device tab uses them, but on the desktop leaving them unsaved is caught by the unsaved-changes prompt on exit, which
+// Android never shows: the next start would lose them. Closing with changes saves them as OK does, when the name is valid.
+json close(const json &a)
 {
+    if (g_dialog && g_changed) {
+        g_dialog->update_preset_input();
+        if (g_dialog->m_valid_type != PhysicalPrinterDialog::NoValid) return ok(a);
+    }
     g_dialog.reset();
     return presets_state();
 }
