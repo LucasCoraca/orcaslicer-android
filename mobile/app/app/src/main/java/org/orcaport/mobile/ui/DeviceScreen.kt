@@ -62,6 +62,11 @@ fun PrinterWebView(url: String, apikey: String, reload: Int = 0) {
             layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            // a host page bundled with the app (ElegooLink's LAN page) is a file:// URL: only files under resources/web
+            // can load, and only when the page itself is one of them. No file page gets cross-origin file access.
+            val webRoot = java.io.File(ctx.filesDir, "resources/web").canonicalPath + "/"
+            fun bundled(u: android.net.Uri) = u.scheme == "file" && u.path != null && java.io.File(u.path!!).canonicalPath.startsWith(webRoot)
+            settings.allowFileAccess = bundled(android.net.Uri.parse(url))
             var keySent = false
             webChromeClient = object : android.webkit.WebChromeClient() {
                 override fun onShowFileChooser(view: android.webkit.WebView, callback: android.webkit.ValueCallback<Array<android.net.Uri>>,
@@ -77,6 +82,12 @@ fun PrinterWebView(url: String, apikey: String, reload: Int = 0) {
                 }
             }
             webViewClient = object : android.webkit.WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: android.webkit.WebView, req: android.webkit.WebResourceRequest) =
+                    req.url.scheme == "file" && !bundled(req.url)
+                override fun shouldInterceptRequest(view: android.webkit.WebView, req: android.webkit.WebResourceRequest): android.webkit.WebResourceResponse? =
+                    if (req.url.scheme == "file" && !bundled(req.url))
+                        android.webkit.WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", emptyMap(), java.io.ByteArrayInputStream(ByteArray(0)))
+                    else null
                 override fun onPageFinished(view: android.webkit.WebView, u: String?) {
                     if (keySent || apikey.isEmpty() || u.isNullOrEmpty()) return
                     keySent = true

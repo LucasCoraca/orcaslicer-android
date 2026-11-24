@@ -8794,7 +8794,7 @@ index 000000000..70fe24ddc
 +}
 +#endif
 diff --git a/src/libslic3r/AppConfig.cpp b/src/libslic3r/AppConfig.cpp
-index 98efc032b..2f3392fc6 100644
+index 98efc032b..2ac57cb18 100644
 --- a/src/libslic3r/AppConfig.cpp
 +++ b/src/libslic3r/AppConfig.cpp
 @@ -387,7 +387,11 @@ void AppConfig::set_defaults()
@@ -8809,6 +8809,17 @@ index 98efc032b..2f3392fc6 100644
  
      if (get("show_3d_navigator").empty())
          set_bool("show_3d_navigator", true);
+@@ -927,6 +931,10 @@ std::string AppConfig::load(bool read_only)
+                 }
+             } else if (it.key() == "orca_presets") {
+                 for (auto& j_model : it.value()) {
++#ifdef __ANDROID__
++                    // earlier app versions saved a nameless entry for the placeholder printer; it must not abort the load
++                    if (!j_model.contains("machine")) continue;
++#endif
+                     m_printer_settings[j_model["machine"].get<std::string>()] = j_model;
+                 }
+             } else if (it.key() == "local_machines") {
 diff --git a/src/libslic3r/CMakeLists.txt b/src/libslic3r/CMakeLists.txt
 index fa9aec853..c2c959185 100644
 --- a/src/libslic3r/CMakeLists.txt

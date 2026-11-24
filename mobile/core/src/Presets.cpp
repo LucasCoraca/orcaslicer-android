@@ -121,8 +121,11 @@ static void set_bed_type(BedType bed_type)
     Core &core = Core::get();
     core.preset_bundle->project_config.set_key_value("curr_bed_type", new ConfigOptionEnum<BedType>(bed_type));
     core.app_config->set("curr_bed_type", std::to_string(int(bed_type)));
-    core.app_config->set_printer_setting(core.preset_bundle->printers.get_selected_preset_name(), "curr_bed_type",
-                                         std::to_string(int(bed_type)));
+    // an entry needs its "machine" key to load back, and the placeholder printer keeps none (export_selections)
+    const std::string printer = core.preset_bundle->printers.get_selected_preset_name();
+    if (printer == "Default Printer") return;
+    core.app_config->set_printer_setting(printer, PRESET_PRINTER_NAME, printer);
+    core.app_config->set_printer_setting(printer, "curr_bed_type", std::to_string(int(bed_type)));
 }
 
 // Sidebar::set_bed_type_accord_combox: the type if the printer supports it, else its first one
